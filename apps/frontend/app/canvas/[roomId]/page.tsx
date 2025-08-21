@@ -7,7 +7,7 @@ export default function Canvas() {
 
     useEffect(() => {
         if (canvasRef.current) {
-           initDraw(canvasRef.current);
+        
         }
     }, []);
 

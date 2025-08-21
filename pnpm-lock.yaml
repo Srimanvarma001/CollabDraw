@@ -20,12 +20,12 @@ importers:
 
   apps/frontend:
     dependencies:
-      '@repo/draw':
-        specifier: workspace:*
-        version: link:../../packages/draw
       '@repo/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      axios:
+        specifier: ^1.9.0
+        version: 1.9.0
       lucide-react:
         specifier: ^0.511.0
         version: 0.511.0(react@19.1.0)
