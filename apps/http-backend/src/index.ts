@@ -1,11 +1,11 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import cors from "cors";
+import bcrypt from "bcrypt";
 import { JWT_SECRET } from '@repo/backend-common';
 import { middleware } from "./middleware.js";
 import { CreateUserSchema, SigninSchema, CreateRoomSchema } from "@repo/common/types";
 import { prismaClient } from "@repo/db";
-// ...existing code...
 
 
 const app = express();
@@ -23,12 +23,12 @@ app.post("/signup", async (req, res) => {
         })
         return;
     }
+    const hashedPassword = await bcrypt.hash(parsedData.data.password, 10);
     try {
         const user = await prismaClient.user.create({
             data: {
                 email: parsedData.data?.username,
-                // TODO: Hash the pw
-                password: parsedData.data.password,
+                password: hashedPassword,
                 name: parsedData.data.name
             }
         })
@@ -51,15 +51,22 @@ app.post("/signin", async (req, res) => {
         return;
     }
 
-    // TODO: Compare the hashed pws here
     const user = await prismaClient.user.findFirst({
         where: {
-            email: parsedData.data.username,
-            password: parsedData.data.password
+            email: parsedData.data.username
         }
     })
 
     if (!user) {
+        res.status(403).json({
+            message: "Not authorized"
+        })
+        return;
+    }
+
+    const isValid = await bcrypt.compare(parsedData.data.password, user.password);
+
+    if (!isValid) {
         res.status(403).json({
             message: "Not authorized"
         })
@@ -75,8 +82,6 @@ app.post("/signin", async (req, res) => {
     })
 })
 
-//@ts-ignore
-
 app.post("/room", middleware, async (req, res) => {
     const parsedData = CreateRoomSchema.safeParse(req.body);
     if (!parsedData.success) {
@@ -85,8 +90,12 @@ app.post("/room", middleware, async (req, res) => {
         })
         return;
     }
-    // @ts-ignore: TODO: Fix this
     const userId = req.userId;
+
+    if (!userId) {
+        res.status(403).json({ message: "Unauthorized" });
+        return;
+    }
 
     try {
         const room = await prismaClient.room.create({

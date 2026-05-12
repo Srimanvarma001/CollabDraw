@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET } from '@repo/backend-common';
+import "./types.js";
 
 
 export function middleware(req: Request, res: Response, next: NextFunction) {
@@ -10,15 +11,13 @@ export function middleware(req: Request, res: Response, next: NextFunction) {
     const decoded = jwt.verify(token, JWT_SECRET);
 
     if (decoded) {
-        //add global types to fix this 
-        //@ts-ignore
-        req.userId = decoded.userId;
+        req.userId = (decoded as { userId: string }).userId;
         next();
 
     } else {
-        return res.status(403).json({
+        res.status(403).json({
             message: "Authorization failed"
-        })
+        });
     }
 
 }
