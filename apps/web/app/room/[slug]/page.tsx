@@ -5,5 +5,5 @@ export default async function({
         slug: string
     }
 }){
-    return <div></div>
+    return <div className="bg-white">hi there</div>
 }

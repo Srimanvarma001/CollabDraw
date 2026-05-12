@@ -21,7 +21,6 @@ function App() {
             <div className="mt-10 flex items-center justify-center gap-x-6">
               <Link href={"/signin"}>
               
-              //@ts-ignore
                 <Button variant={"primary"} size="lg" className="h-12 px-6">
                   Sign in
                   <Pencil className="ml-2 h-4 w-4" />
