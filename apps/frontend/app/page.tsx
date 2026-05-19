@@ -19,8 +19,8 @@ function App() {
               No sign-up required.
             </p>
             <div className="mt-10 flex items-center justify-center gap-x-6">
-              <Link href={"/signin"}>
-              
+<Link href={"/signin"}>
+               
                 <Button variant={"primary"} size="lg" className="h-12 px-6">
                   Sign in
                   <Pencil className="ml-2 h-4 w-4" />
@@ -29,6 +29,11 @@ function App() {
               <Link href="/signup">
                 <Button variant="outline" size="lg" className="h-12 px-6">
                   Sign up
+                </Button>
+              </Link>
+              <Link href="/rooms">
+                <Button variant="outline" size="lg" className="h-12 px-6">
+                  Rooms
                 </Button>
               </Link>
             </div>

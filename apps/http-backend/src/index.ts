@@ -152,6 +152,43 @@ app.get("/room/:slug", async (req, res) => {
     res.json({
         room
     })
-}) 
+});
+
+app.get("/rooms", async (req, res) => {
+    const rooms = await prismaClient.room.findMany({
+        orderBy: { createdAt: "desc" },
+        include: { admin: { select: { name: true, email: true } } }
+    });
+    res.json({ rooms });
+});
+
+app.delete("/room/:id", middleware, async (req, res) => {
+    const roomId = Number(req.params.id);
+    const userId = req.userId;
+
+    if (!userId) {
+        res.status(403).json({ message: "Unauthorized" });
+        return;
+    }
+
+    const room = await prismaClient.room.findFirst({
+        where: { id: roomId }
+    });
+
+    if (!room) {
+        res.status(404).json({ message: "Room not found" });
+        return;
+    }
+
+    if (room.adminId !== userId) {
+        res.status(403).json({ message: "Only the room admin can delete this room" });
+        return;
+    }
+
+    await prismaClient.chat.deleteMany({ where: { roomId } });
+    await prismaClient.room.delete({ where: { id: roomId } });
+
+    res.json({ message: "Room deleted successfully" });
+});
 
 app.listen(3001);
