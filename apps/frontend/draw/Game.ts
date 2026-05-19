@@ -73,6 +73,7 @@ export class Game {
     private scale: number = 1;
     private offsetX: number = 0;
     private offsetY: number = 0;
+    private erasing: boolean = false;
 
     socket: WebSocket;
 
@@ -268,6 +269,7 @@ export class Game {
 
     mouseDownHandler = (e: MouseEvent) => {
         if (this.selectedTool === "eraser") {
+            this.clicked = true;
             this.handleEraser(e.clientX, e.clientY);
             return;
         }
@@ -283,18 +285,17 @@ export class Game {
 
     private handleEraser(x: number, y: number) {
         const threshold = 20;
-        let removed = false;
+        const beforeCount = this.existingShapes.length;
 
         this.existingShapes = this.existingShapes.filter(shape => {
             if (this.isPointNearShape(x, y, shape, threshold)) {
-                removed = true;
                 return false;
             }
             return true;
         });
 
-        if (removed) {
-            this.saveToHistory();
+        if (this.existingShapes.length !== beforeCount) {
+            this.erasing = true;
             this.clearCanvas();
         }
     }
@@ -336,6 +337,15 @@ export class Game {
     }
 
     mouseUpHandler = (e: MouseEvent) => {
+        if (this.selectedTool === "eraser") {
+            if (this.erasing) {
+                this.saveToHistory();
+                this.erasing = false;
+            }
+            this.clicked = false;
+            return;
+        }
+
         if (this.selectedTool === "pencil") {
             if (this.currentPath.length > 1) {
                 const shape: Shape = {
@@ -450,6 +460,11 @@ export class Game {
                 }
             }
             this.ctx.stroke();
+            return;
+        }
+
+        if (this.selectedTool === "eraser" && this.clicked) {
+            this.handleEraser(e.clientX, e.clientY);
             return;
         }
 
