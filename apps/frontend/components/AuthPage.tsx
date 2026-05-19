@@ -6,8 +6,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Pencil, Eye, EyeOff } from "lucide-react";
 
-export function AuthPage({ isSignin }: {
+export function AuthPage({ isSignin, returnUrl }: {
     isSignin: boolean
+    returnUrl?: string
 }) {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -35,7 +36,7 @@ export function AuthPage({ isSignin }: {
                 if (isSignin) {
                     localStorage.setItem("token", data.token);
                     localStorage.setItem("userName", email.split("@")[0] || "User");
-                    router.push("/canvas/test-room");
+                    router.push(returnUrl || "/canvas/test-room");
                 } else {
                     alert("Account created! Please sign in.");
                     router.push("/signin");

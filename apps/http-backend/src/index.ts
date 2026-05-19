@@ -106,7 +106,10 @@ app.post("/room", middleware, async (req, res) => {
         })
 
         res.json({
-            roomId: room.id
+            room: {
+                id: room.id,
+                slug: room.slug
+            }
         })
     } catch (e) {
         res.status(411).json({

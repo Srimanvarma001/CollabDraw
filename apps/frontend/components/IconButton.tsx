@@ -1,12 +1,13 @@
 import { ReactNode } from "react";
 
 export function IconButton({
-    icon, onClick, activated, disabled
+    icon, onClick, activated, disabled, size = 36
 }: {
     icon: ReactNode,
     onClick: () => void,
     activated?: boolean,
-    disabled?: boolean
+    disabled?: boolean,
+    size?: number
 }) {
     return (
         <div 
@@ -15,8 +16,8 @@ export function IconButton({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                width: "36px",
-                height: "36px",
+                width: `${size}px`,
+                height: `${size}px`,
                 borderRadius: "8px",
                 cursor: disabled ? "not-allowed" : "pointer",
                 transition: "all 0.15s ease",

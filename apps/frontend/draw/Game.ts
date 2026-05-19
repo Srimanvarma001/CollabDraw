@@ -77,6 +77,8 @@ export class Game {
     private lastCursorSent = 0;
     private cursorUpdateInterval = 50;
     private erasing: boolean = false;
+    private lastZoomTime = 0;
+    private zoomThrottleMs = 16;
 
     private camera: Camera = { x: 0, y: 0, zoom: 1 };
     private isPanning: boolean = false;
@@ -96,6 +98,17 @@ export class Game {
         this.initHandlers();
         this.initMouseHandlers();
         this.initKeyboardHandlers();
+        this.initResizeHandler();
+    }
+
+    private resizeHandler = () => {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+        this.redrawCanvas();
+    };
+
+    private initResizeHandler() {
+        window.addEventListener("resize", this.resizeHandler);
     }
 
     destroy() {
@@ -105,6 +118,7 @@ export class Game {
         this.canvas.removeEventListener("wheel", this.wheelHandler, { passive: false });
         window.removeEventListener("keydown", this.keyDownHandler);
         window.removeEventListener("keyup", this.keyUpHandler);
+        window.removeEventListener("resize", this.resizeHandler);
     }
 
     setTool(tool: "circle" | "pencil" | "rect" | "line" | "arrow" | "eraser") {
@@ -329,10 +343,16 @@ export class Game {
             const message = JSON.parse(event.data);
 
             if (message.type == "chat") {
-                const parsedShape = JSON.parse(message.message)
-                this.existingShapes.push(parsedShape.shape)
-                this.saveToHistory();
-                this.redrawCanvas();
+                const parsedMessage = JSON.parse(message.message);
+                if (parsedMessage.shapes) {
+                    this.existingShapes = parsedMessage.shapes;
+                    this.saveToHistory();
+                    this.redrawCanvas();
+                } else if (parsedMessage.shape) {
+                    this.existingShapes.push(parsedMessage.shape);
+                    this.saveToHistory();
+                    this.redrawCanvas();
+                }
             } else if (message.type === "cursor") {
                 this.cursors.set(message.userId, {
                     x: message.cursor.x,
@@ -350,6 +370,10 @@ export class Game {
 
     wheelHandler = (e: WheelEvent) => {
         e.preventDefault();
+
+        const now = Date.now();
+        if (now - this.lastZoomTime < this.zoomThrottleMs) return;
+        this.lastZoomTime = now;
 
         const rect = this.canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
@@ -447,7 +471,16 @@ export class Game {
         if (this.existingShapes.length !== beforeCount) {
             this.erasing = true;
             this.redrawCanvas();
+            this.broadcastShapes();
         }
+    }
+
+    private broadcastShapes() {
+        this.socket.send(JSON.stringify({
+            type: "chat",
+            message: JSON.stringify({ shapes: this.existingShapes }),
+            roomId: this.roomId
+        }));
     }
 
     private isPointNearShape(x: number, y: number, shape: Shape, threshold: number): boolean {

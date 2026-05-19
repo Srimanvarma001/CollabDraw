@@ -1,5 +1,6 @@
 import { AuthPage } from "@/components/AuthPage";
 
-export default function Signin(){
-    return <AuthPage isSignin={true}/>
+export default async function Signin({ searchParams }: { searchParams: Promise<{ returnUrl?: string }> }) {
+    const { returnUrl } = await searchParams;
+    return <AuthPage isSignin={true} returnUrl={returnUrl} />
 }
