@@ -1,8 +1,7 @@
 "use client";
 
 import { WS_URL } from "@/config";
-import { initDraw } from "@/draw";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Canvas } from "./Canvas";
 
 export function RoomCanvas({roomId}: {roomId: string}) {
@@ -38,7 +37,7 @@ export function RoomCanvas({roomId}: {roomId: string}) {
         </div>;
     }
 
-    return <div>
+    return <div className="h-screen w-screen overflow-hidden">
         <Canvas roomId={roomId} socket={socket} />
     </div>;
 }

@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useRef, useState } from "react";
 import { IconButton } from "./IconButton";
 import { Circle, Pencil, RectangleHorizontalIcon, Undo2, Redo2, Minus, Users, ArrowUpRight, Eraser, ZoomIn, ZoomOut } from "lucide-react";
@@ -25,7 +27,6 @@ export function Canvas({
     roomId: string;
 }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const bgCanvasRef = useRef<HTMLCanvasElement>(null);
     const [game, setGame] = useState<Game>();
     const [selectedTool, setSelectedTool] = useState<Tool>("pencil");
     const [strokeColor, setStrokeColor] = useState("#ffffff");
@@ -33,32 +34,7 @@ export function Canvas({
     const [canUndo, setCanUndo] = useState(false);
     const [canRedo, setCanRedo] = useState(false);
     const [users, setUsers] = useState<UserPresence[]>([]);
-    const [scale, setScale] = useState(1);
-
-    useEffect(() => {
-        if (bgCanvasRef.current) {
-            const bgCanvas = bgCanvasRef.current;
-            const ctx = bgCanvas.getContext("2d");
-            if (ctx) {
-                bgCanvas.width = window.innerWidth;
-                bgCanvas.height = window.innerHeight;
-                
-                ctx.fillStyle = "#0f0f14";
-                ctx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
-                
-                ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
-                const spacing = 24;
-                
-                for (let x = spacing; x < bgCanvas.width; x += spacing) {
-                    for (let y = spacing; y < bgCanvas.height; y += spacing) {
-                        ctx.beginPath();
-                        ctx.arc(x, y, 1, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                }
-            }
-        }
-    }, []);
+    const [zoom, setZoom] = useState(1);
 
     useEffect(() => {
         game?.setTool(selectedTool);
@@ -77,6 +53,7 @@ export function Canvas({
             setCanUndo(game?.canUndo() ?? false);
             setCanRedo(game?.canRedo() ?? false);
             setUsers(game?.getUsers() ?? []);
+            setZoom(game?.getZoom() ?? 1);
         }, 100);
         return () => clearInterval(interval);
     }, [game]);
@@ -92,55 +69,49 @@ export function Canvas({
         }
     }, [canvasRef, roomId, socket]);
 
-    useEffect(() => {
-        game?.setScale(scale);
-    }, [scale, game]);
+    const handleZoomIn = () => {
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        game?.zoomIn(centerX, centerY);
+    };
 
-    const handleZoomIn = () => setScale(s => Math.min(s + 0.1, 3));
-    const handleZoomOut = () => setScale(s => Math.max(s - 0.1, 0.3));
+    const handleZoomOut = () => {
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        game?.zoomOut(centerX, centerY);
+    };
 
-    return <div style={{
-        height: "100vh",
-        overflow: "hidden",
-        position: "relative"
-    }}>
-        <canvas 
-            ref={bgCanvasRef} 
-            style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                zIndex: 0
-            }}
-        />
-        <canvas 
-            ref={canvasRef} 
-            width={window.innerWidth} 
-            height={window.innerHeight}
-            style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                zIndex: 1
-            }}
-        />
-        <Topbar 
-            selectedTool={selectedTool} 
-            setSelectedTool={setSelectedTool}
-            strokeColor={strokeColor}
-            setStrokeColor={setStrokeColor}
-            strokeWidth={strokeWidth}
-            setStrokeWidth={setStrokeWidth}
-            onUndo={() => game?.undo()}
-            onRedo={() => game?.redo()}
-            canUndo={canUndo}
-            canRedo={canRedo}
-            users={users}
-            scale={scale}
-            onZoomIn={handleZoomIn}
-            onZoomOut={handleZoomOut}
-        />
-    </div>
+    const handleResetZoom = () => {
+        game?.resetView();
+    };
+
+    return (
+        <div className="canvas-wrapper">
+            <canvas 
+                ref={canvasRef} 
+                width={window.innerWidth} 
+                height={window.innerHeight}
+                className="drawing-canvas"
+            />
+            <Topbar 
+                selectedTool={selectedTool} 
+                setSelectedTool={setSelectedTool}
+                strokeColor={strokeColor}
+                setStrokeColor={setStrokeColor}
+                strokeWidth={strokeWidth}
+                setStrokeWidth={setStrokeWidth}
+                onUndo={() => game?.undo()}
+                onRedo={() => game?.redo()}
+                canUndo={canUndo}
+                canRedo={canRedo}
+                users={users}
+                zoom={zoom}
+                onZoomIn={handleZoomIn}
+                onZoomOut={handleZoomOut}
+                onResetZoom={handleResetZoom}
+            />
+        </div>
+    );
 }
 
 function Topbar({
@@ -155,9 +126,10 @@ function Topbar({
     canUndo,
     canRedo,
     users,
-    scale,
+    zoom,
     onZoomIn,
-    onZoomOut
+    onZoomOut,
+    onResetZoom
 }: {
     selectedTool: Tool,
     setSelectedTool: (s: Tool) => void,
@@ -170,21 +142,24 @@ function Topbar({
     canUndo: boolean,
     canRedo: boolean,
     users: UserPresence[],
-    scale: number,
+    zoom: number,
     onZoomIn: () => void,
-    onZoomOut: () => void
+    onZoomOut: () => void,
+    onResetZoom: () => void
 }) {
     return (
-        <div className="toolbar-glass" style={{
+        <div className="toolbar-glass toolbar-container" style={{
             position: "fixed",
-            top: 16,
+            top: 12,
             left: "50%",
             transform: "translateX(-50%)",
+            zIndex: 1000,
             display: "flex",
-            gap: "4px",
-            padding: "8px 16px",
+            flexDirection: "row",
             alignItems: "center",
-            zIndex: 100
+            gap: 8,
+            padding: "8px 16px",
+            marginTop: 12
         }}>
             <IconButton 
                 onClick={() => setSelectedTool("pencil")}
@@ -221,14 +196,16 @@ function Topbar({
                 width: "1px", 
                 height: "24px", 
                 backgroundColor: "rgba(255, 255, 255, 0.15)", 
-                margin: "0 8px" 
+                margin: "0 8px",
+                flexShrink: 0
             }} />
             
-            <div style={{ display: "flex", gap: "4px" }}>
+            <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
                 {COLORS.map(color => (
                     <div
                         key={color}
                         onClick={() => setStrokeColor(color)}
+                        className="color-dot"
                         style={{
                             width: "22px",
                             height: "22px",
@@ -237,7 +214,8 @@ function Topbar({
                             cursor: "pointer",
                             border: strokeColor === color ? "2px solid rgba(255, 255, 255, 0.8)" : "2px solid transparent",
                             boxShadow: strokeColor === color ? "0 0 0 2px rgba(0, 0, 0, 0.5)" : "none",
-                            transition: "all 0.15s ease"
+                            transition: "all 0.15s ease",
+                            flexShrink: 0
                         }}
                     />
                 ))}
@@ -247,10 +225,11 @@ function Topbar({
                 width: "1px", 
                 height: "24px", 
                 backgroundColor: "rgba(255, 255, 255, 0.15)", 
-                margin: "0 8px" 
+                margin: "0 8px",
+                flexShrink: 0
             }} />
             
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
                 <input
                     type="range"
                     min="1"
@@ -276,7 +255,8 @@ function Topbar({
                 width: "1px", 
                 height: "24px", 
                 backgroundColor: "rgba(255, 255, 255, 0.15)", 
-                margin: "0 8px" 
+                margin: "0 8px",
+                flexShrink: 0
             }} />
             
             <IconButton 
@@ -294,10 +274,11 @@ function Topbar({
                 width: "1px", 
                 height: "24px", 
                 backgroundColor: "rgba(255, 255, 255, 0.15)", 
-                margin: "0 8px" 
+                margin: "0 8px",
+                flexShrink: 0
             }} />
 
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
                 <Users size={16} color="rgba(255, 255, 255, 0.7)" />
                 <div style={{ display: "flex", gap: "2px" }}>
                     {users.slice(0, 5).map((user, i) => (
@@ -347,25 +328,29 @@ function Topbar({
                 width: "1px", 
                 height: "24px", 
                 backgroundColor: "rgba(255, 255, 255, 0.15)", 
-                margin: "0 8px" 
+                margin: "0 8px",
+                flexShrink: 0
             }} />
 
             <IconButton 
                 onClick={onZoomOut}
-                activated={false}
                 icon={<ZoomOut size={18} />}
             />
-            <span style={{ 
-                color: "rgba(255, 255, 255, 0.7)", 
-                fontSize: "12px", 
-                minWidth: "40px", 
-                textAlign: "center" 
-            }}>
-                {Math.round(scale * 100)}%
+            <span 
+                onClick={onResetZoom}
+                style={{ 
+                    color: "rgba(255, 255, 255, 0.7)", 
+                    fontSize: "12px", 
+                    minWidth: "40px", 
+                    textAlign: "center",
+                    flexShrink: 0,
+                    cursor: "pointer"
+                }}
+            >
+                {Math.round(zoom * 100)}%
             </span>
             <IconButton 
                 onClick={onZoomIn}
-                activated={false}
                 icon={<ZoomIn size={18} />}
             />
         </div>

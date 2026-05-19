@@ -51,6 +51,12 @@ export interface UserPresence {
     userName: string;
 }
 
+interface Camera {
+    x: number;
+    y: number;
+    zoom: number;
+}
+
 export class Game {
 
     private canvas: HTMLCanvasElement;
@@ -70,10 +76,12 @@ export class Game {
     private users: UserPresence[] = [];
     private lastCursorSent = 0;
     private cursorUpdateInterval = 50;
-    private scale: number = 1;
-    private offsetX: number = 0;
-    private offsetY: number = 0;
     private erasing: boolean = false;
+
+    private camera: Camera = { x: 0, y: 0, zoom: 1 };
+    private isPanning: boolean = false;
+    private panStart: { x: number; y: number } = { x: 0, y: 0 };
+    private spacePressed: boolean = false;
 
     socket: WebSocket;
 
@@ -87,14 +95,16 @@ export class Game {
         this.init();
         this.initHandlers();
         this.initMouseHandlers();
+        this.initKeyboardHandlers();
     }
 
     destroy() {
-        this.canvas.removeEventListener("mousedown", this.mouseDownHandler)
-
-        this.canvas.removeEventListener("mouseup", this.mouseUpHandler)
-
-        this.canvas.removeEventListener("mousemove", this.mouseMoveHandler)
+        this.canvas.removeEventListener("mousedown", this.mouseDownHandler);
+        this.canvas.removeEventListener("mouseup", this.mouseUpHandler);
+        this.canvas.removeEventListener("mousemove", this.mouseMoveHandler);
+        this.canvas.removeEventListener("wheel", this.wheelHandler, { passive: false });
+        window.removeEventListener("keydown", this.keyDownHandler);
+        window.removeEventListener("keyup", this.keyUpHandler);
     }
 
     setTool(tool: "circle" | "pencil" | "rect" | "line" | "arrow" | "eraser") {
@@ -109,9 +119,34 @@ export class Game {
         this.strokeWidth = width;
     }
 
-    setScale(scale: number) {
-        this.scale = scale;
-        this.clearCanvas();
+    getZoom(): number {
+        return this.camera.zoom;
+    }
+
+    setZoom(newZoom: number, centerX?: number, centerY?: number) {
+        const cx = centerX ?? this.canvas.width / 2;
+        const cy = centerY ?? this.canvas.height / 2;
+
+        const newZoomClamped = Math.min(Math.max(newZoom, 0.1), 20);
+
+        this.camera.x = cx - (cx - this.camera.x) * (newZoomClamped / this.camera.zoom);
+        this.camera.y = cy - (cy - this.camera.y) * (newZoomClamped / this.camera.zoom);
+        this.camera.zoom = newZoomClamped;
+
+        this.redrawCanvas();
+    }
+
+    zoomIn(centerX?: number, centerY?: number) {
+        this.setZoom(this.camera.zoom * 1.1, centerX, centerY);
+    }
+
+    zoomOut(centerX?: number, centerY?: number) {
+        this.setZoom(this.camera.zoom * 0.9, centerX, centerY);
+    }
+
+    resetView() {
+        this.camera = { x: 0, y: 0, zoom: 1 };
+        this.redrawCanvas();
     }
 
     undo() {
@@ -120,7 +155,7 @@ export class Game {
             this.existingShapes = this.historyIndex >= 0 
                 ? [...this.history[this.historyIndex]] 
                 : [];
-            this.clearCanvas();
+            this.redrawCanvas();
         }
     }
 
@@ -128,7 +163,7 @@ export class Game {
         if (this.historyIndex < this.history.length - 1) {
             this.historyIndex++;
             this.existingShapes = [...this.history[this.historyIndex]];
-            this.clearCanvas();
+            this.redrawCanvas();
         }
     }
 
@@ -144,26 +179,70 @@ export class Game {
         return this.users;
     }
 
-    clearCanvas() {
+    private screenToWorld(screenX: number, screenY: number) {
+        return {
+            x: (screenX - this.camera.x) / this.camera.zoom,
+            y: (screenY - this.camera.y) / this.camera.zoom,
+        };
+    }
+
+    private worldToScreen(worldX: number, worldY: number) {
+        return {
+            x: worldX * this.camera.zoom + this.camera.x,
+            y: worldY * this.camera.zoom + this.camera.y,
+        };
+    }
+
+    private redrawCanvas() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.fillStyle = "rgba(0, 0, 0)"
+        this.ctx.fillStyle = "#0f0f14";
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
+        this.drawGrid();
+
         this.ctx.save();
-        this.ctx.translate(this.offsetX, this.offsetY);
-        this.ctx.scale(this.scale, this.scale);
+        this.ctx.translate(this.camera.x, this.camera.y);
+        this.ctx.scale(this.camera.zoom, this.camera.zoom);
 
         this.existingShapes.forEach((shape) => {
             this.drawShape(shape);
         });
-        
+
         this.ctx.restore();
-        
+
         this.drawCursors();
+    }
+
+    private drawGrid() {
+        const gridSize = 20;
+        const dotSize = 1;
+        const dotColor = "rgba(255, 255, 255, 0.06)";
+
+        const startX = Math.floor(-this.camera.x / this.camera.zoom / gridSize) * gridSize - gridSize;
+        const startY = Math.floor(-this.camera.y / this.camera.zoom / gridSize) * gridSize - gridSize;
+
+        const endX = startX + this.canvas.width / this.camera.zoom + gridSize * 2;
+        const endY = startY + this.canvas.height / this.camera.zoom + gridSize * 2;
+
+        this.ctx.fillStyle = dotColor;
+        for (let x = startX; x < endX; x += gridSize) {
+            for (let y = startY; y < endY; y += gridSize) {
+                const screenPos = this.worldToScreen(x, y);
+                this.ctx.beginPath();
+                this.ctx.arc(screenPos.x, screenPos.y, dotSize * this.camera.zoom, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+        }
     }
 
     private drawCursors() {
         this.cursors.forEach((cursor) => {
+            const screenPos = this.worldToScreen(cursor.x, cursor.y);
+            
+            this.ctx.save();
+            this.ctx.translate(this.camera.x, this.camera.y);
+            this.ctx.scale(this.camera.zoom, this.camera.zoom);
+
             this.ctx.beginPath();
             this.ctx.fillStyle = "#3b82f6";
             this.ctx.moveTo(cursor.x, cursor.y);
@@ -178,6 +257,8 @@ export class Game {
                 this.ctx.fillStyle = "#fff";
                 this.ctx.fillText(cursor.userName, cursor.x + 14, cursor.y + 20);
             }
+
+            this.ctx.restore();
         });
     }
 
@@ -240,7 +321,7 @@ export class Game {
         this.existingShapes = await getExistingShapes(this.roomId);
         this.history = [[...this.existingShapes]];
         this.historyIndex = 0;
-        this.clearCanvas();
+        this.redrawCanvas();
     }
 
     initHandlers() {
@@ -251,7 +332,7 @@ export class Game {
                 const parsedShape = JSON.parse(message.message)
                 this.existingShapes.push(parsedShape.shape)
                 this.saveToHistory();
-                this.clearCanvas();
+                this.redrawCanvas();
             } else if (message.type === "cursor") {
                 this.cursors.set(message.userId, {
                     x: message.cursor.x,
@@ -259,32 +340,101 @@ export class Game {
                     userName: message.userName,
                     userId: message.userId
                 });
-                this.clearCanvas();
+                this.redrawCanvas();
             } else if (message.type === "presence") {
                 this.users = message.users || [];
-                this.clearCanvas();
+                this.redrawCanvas();
             }
         }
     }
 
+    wheelHandler = (e: WheelEvent) => {
+        e.preventDefault();
+
+        const rect = this.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const zoomFactor = e.deltaY < 0 
+            ? (e.ctrlKey ? 1.05 : 1.1)
+            : (e.ctrlKey ? 0.95 : 0.9);
+
+        const newZoom = Math.min(Math.max(this.camera.zoom * zoomFactor, 0.1), 20);
+
+        this.camera.x = mouseX - (mouseX - this.camera.x) * (newZoom / this.camera.zoom);
+        this.camera.y = mouseY - (mouseY - this.camera.y) * (newZoom / this.camera.zoom);
+        this.camera.zoom = newZoom;
+
+        this.redrawCanvas();
+    }
+
+    keyDownHandler = (e: KeyboardEvent) => {
+        if (e.code === "Space" && !this.spacePressed) {
+            this.spacePressed = true;
+            this.canvas.style.cursor = "grab";
+        }
+
+        if (e.ctrlKey || e.metaKey) {
+            if (e.key === "=" || e.key === "+") {
+                e.preventDefault();
+                this.zoomIn();
+            } else if (e.key === "-") {
+                e.preventDefault();
+                this.zoomOut();
+            } else if (e.key === "0") {
+                e.preventDefault();
+                this.resetView();
+            }
+        }
+    }
+
+    keyUpHandler = (e: KeyboardEvent) => {
+        if (e.code === "Space") {
+            this.spacePressed = false;
+            this.canvas.style.cursor = this.getCursorForTool();
+        }
+    }
+
+    private getCursorForTool(): string {
+        switch (this.selectedTool) {
+            case "pencil": return "crosshair";
+            case "eraser": return "pointer";
+            default: return "crosshair";
+        }
+    }
+
+    initKeyboardHandlers() {
+        window.addEventListener("keydown", this.keyDownHandler);
+        window.addEventListener("keyup", this.keyUpHandler);
+    }
+
     mouseDownHandler = (e: MouseEvent) => {
-        if (this.selectedTool === "eraser") {
-            this.clicked = true;
-            this.handleEraser(e.clientX, e.clientY);
+        if (e.button === 1 || (e.button === 0 && this.spacePressed)) {
+            this.isPanning = true;
+            this.panStart = { x: e.clientX, y: e.clientY };
+            this.canvas.style.cursor = "grabbing";
             return;
         }
 
-        this.clicked = true
-        this.startX = e.clientX
-        this.startY = e.clientY
+        if (this.selectedTool === "eraser") {
+            this.clicked = true;
+            const worldPos = this.screenToWorld(e.clientX, e.clientY);
+            this.handleEraser(worldPos.x, worldPos.y);
+            return;
+        }
+
+        this.clicked = true;
+        const worldPos = this.screenToWorld(e.clientX, e.clientY);
+        this.startX = worldPos.x;
+        this.startY = worldPos.y;
         
         if (this.selectedTool === "pencil") {
-            this.currentPath = [{ x: e.clientX, y: e.clientY }];
+            this.currentPath = [{ x: worldPos.x, y: worldPos.y }];
         }
     }
 
     private handleEraser(x: number, y: number) {
-        const threshold = 20;
+        const threshold = 20 / this.camera.zoom;
         const beforeCount = this.existingShapes.length;
 
         this.existingShapes = this.existingShapes.filter(shape => {
@@ -296,7 +446,7 @@ export class Game {
 
         if (this.existingShapes.length !== beforeCount) {
             this.erasing = true;
-            this.clearCanvas();
+            this.redrawCanvas();
         }
     }
 
@@ -337,6 +487,12 @@ export class Game {
     }
 
     mouseUpHandler = (e: MouseEvent) => {
+        if (this.isPanning) {
+            this.isPanning = false;
+            this.canvas.style.cursor = this.spacePressed ? "grab" : this.getCursorForTool();
+            return;
+        }
+
         if (this.selectedTool === "eraser") {
             if (this.erasing) {
                 this.saveToHistory();
@@ -364,13 +520,14 @@ export class Game {
             }
             this.currentPath = [];
             this.clicked = false;
-            this.clearCanvas();
+            this.redrawCanvas();
             return;
         }
 
-        this.clicked = false
-        const width = e.clientX - this.startX;
-        const height = e.clientY - this.startY;
+        this.clicked = false;
+        const worldEnd = this.screenToWorld(e.clientX, e.clientY);
+        const width = worldEnd.x - this.startX;
+        const height = worldEnd.y - this.startY;
 
         const selectedTool = this.selectedTool;
         let shape: Shape | null = null;
@@ -386,12 +543,12 @@ export class Game {
                 strokeWidth: this.strokeWidth
             }
         } else if (selectedTool === "circle") {
-            const radius = Math.max(width, height) / 2;
+            const radius = Math.max(Math.abs(width), Math.abs(height)) / 2;
             shape = {
                 type: "circle",
                 radius: radius,
-                centerX: this.startX + radius,
-                centerY: this.startY + radius,
+                centerX: this.startX + width / 2,
+                centerY: this.startY + height / 2,
                 strokeColor: this.strokeColor,
                 strokeWidth: this.strokeWidth
             }
@@ -400,8 +557,8 @@ export class Game {
                 type: "line",
                 startX: this.startX,
                 startY: this.startY,
-                endX: e.clientX,
-                endY: e.clientY,
+                endX: worldEnd.x,
+                endY: worldEnd.y,
                 strokeColor: this.strokeColor,
                 strokeWidth: this.strokeWidth
             }
@@ -410,8 +567,8 @@ export class Game {
                 type: "arrow",
                 startX: this.startX,
                 startY: this.startY,
-                endX: e.clientX,
-                endY: e.clientY,
+                endX: worldEnd.x,
+                endY: worldEnd.y,
                 strokeColor: this.strokeColor,
                 strokeWidth: this.strokeWidth
             }
@@ -434,19 +591,33 @@ export class Game {
     }
 
     mouseMoveHandler = (e: MouseEvent) => {
+        if (this.isPanning) {
+            this.camera.x += e.clientX - this.panStart.x;
+            this.camera.y += e.clientY - this.panStart.y;
+            this.panStart = { x: e.clientX, y: e.clientY };
+            this.redrawCanvas();
+            return;
+        }
+
+        const worldPos = this.screenToWorld(e.clientX, e.clientY);
+
         const now = Date.now();
         if (now - this.lastCursorSent > this.cursorUpdateInterval) {
             this.lastCursorSent = now;
             this.socket.send(JSON.stringify({
                 type: "cursor",
                 roomId: this.roomId,
-                cursor: { x: e.clientX, y: e.clientY }
+                cursor: { x: worldPos.x, y: worldPos.y }
             }));
         }
 
         if (this.selectedTool === "pencil" && this.clicked) {
-            this.currentPath.push({ x: e.clientX, y: e.clientY });
-            this.clearCanvas();
+            this.currentPath.push({ x: worldPos.x, y: worldPos.y });
+            this.redrawCanvas();
+            
+            this.ctx.save();
+            this.ctx.translate(this.camera.x, this.camera.y);
+            this.ctx.scale(this.camera.zoom, this.camera.zoom);
             
             this.ctx.strokeStyle = this.strokeColor;
             this.ctx.lineWidth = this.strokeWidth;
@@ -460,18 +631,26 @@ export class Game {
                 }
             }
             this.ctx.stroke();
+            this.ctx.restore();
             return;
         }
 
         if (this.selectedTool === "eraser" && this.clicked) {
-            this.handleEraser(e.clientX, e.clientY);
+            this.handleEraser(worldPos.x, worldPos.y);
             return;
         }
 
         if (this.clicked) {
-            const width = e.clientX - this.startX;
-            const height = e.clientY - this.startY;
-            this.clearCanvas();
+            const worldEnd = this.screenToWorld(e.clientX, e.clientY);
+            const width = worldEnd.x - this.startX;
+            const height = worldEnd.y - this.startY;
+            
+            this.redrawCanvas();
+            
+            this.ctx.save();
+            this.ctx.translate(this.camera.x, this.camera.y);
+            this.ctx.scale(this.camera.zoom, this.camera.zoom);
+            
             this.ctx.strokeStyle = this.strokeColor;
             this.ctx.lineWidth = this.strokeWidth;
             const selectedTool = this.selectedTool;
@@ -479,9 +658,9 @@ export class Game {
             if (selectedTool === "rect") {
                 this.ctx.strokeRect(this.startX, this.startY, width, height);
             } else if (selectedTool === "circle") {
-                const radius = Math.max(width, height) / 2;
-                const centerX = this.startX + radius;
-                const centerY = this.startY + radius;
+                const radius = Math.max(Math.abs(width), Math.abs(height)) / 2;
+                const centerX = this.startX + width / 2;
+                const centerY = this.startY + height / 2;
                 this.ctx.beginPath();
                 this.ctx.arc(centerX, centerY, Math.abs(radius), 0, Math.PI * 2);
                 this.ctx.stroke();
@@ -489,21 +668,22 @@ export class Game {
             } else if (selectedTool === "line") {
                 this.ctx.beginPath();
                 this.ctx.moveTo(this.startX, this.startY);
-                this.ctx.lineTo(e.clientX, e.clientY);
+                this.ctx.lineTo(worldEnd.x, worldEnd.y);
                 this.ctx.stroke();
                 this.ctx.closePath();
             } else if (selectedTool === "arrow") {
-                this.drawArrow(this.startX, this.startY, e.clientX, e.clientY);
+                this.drawArrow(this.startX, this.startY, worldEnd.x, worldEnd.y);
             }
+
+            this.ctx.restore();
         }
     }
 
     initMouseHandlers() {
-        this.canvas.addEventListener("mousedown", this.mouseDownHandler)
-
-        this.canvas.addEventListener("mouseup", this.mouseUpHandler)
-
-        this.canvas.addEventListener("mousemove", this.mouseMoveHandler)
-
+        this.canvas.addEventListener("mousedown", this.mouseDownHandler);
+        this.canvas.addEventListener("mouseup", this.mouseUpHandler);
+        this.canvas.addEventListener("mousemove", this.mouseMoveHandler);
+        this.canvas.addEventListener("wheel", this.wheelHandler, { passive: false });
+        this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
     }
 }

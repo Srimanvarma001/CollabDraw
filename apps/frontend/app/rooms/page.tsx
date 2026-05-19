@@ -64,7 +64,7 @@ export default function RoomsPage() {
                 const data = await res.json();
                 alert(data.message || "Failed to create room");
             }
-        } catch (e) {
+        } catch {
             alert("Something went wrong");
         }
         setCreating(false);
@@ -88,7 +88,7 @@ export default function RoomsPage() {
                 const data = await res.json();
                 alert(data.message || "Failed to delete room");
             }
-        } catch (e) {
+        } catch {
             alert("Something went wrong");
         }
     }

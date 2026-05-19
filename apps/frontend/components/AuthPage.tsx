@@ -50,15 +50,8 @@ export function AuthPage({ isSignin }: {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "var(--bg-primary)" }}>
-            <div 
-                className="card-glass animate-fade-in" 
-                style={{ 
-                    width: "100%", 
-                    maxWidth: "420px", 
-                    padding: "40px"
-                }}
-            >
+        <div className="auth-page-wrapper">
+            <div className="auth-card">
                 <div style={{ textAlign: "center", marginBottom: "32px" }}>
                     <div style={{ 
                         display: "inline-flex", 
@@ -172,7 +165,7 @@ export function AuthPage({ isSignin }: {
                     </div>
 
                     <button
-                        className="btn-primary"
+                        className="btn-primary auth-submit-btn"
                         style={{ 
                             width: "100%", 
                             marginTop: "8px",
@@ -192,12 +185,7 @@ export function AuthPage({ isSignin }: {
                     </button>
                 </div>
 
-                <div style={{ 
-                    textAlign: "center", 
-                    marginTop: "24px",
-                    color: "var(--text-muted)",
-                    fontSize: "14px"
-                }}>
+                <div className="auth-switch-link">
                     {isSignin ? (
                         <>
                             Do not have an account?{" "}
