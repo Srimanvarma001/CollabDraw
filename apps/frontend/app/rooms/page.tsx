@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { HTTP_BACKEND } from "@/config";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Plus, Trash2, ArrowLeft, Layout } from "lucide-react";
 
 interface Room {
     id: number;
@@ -31,8 +32,8 @@ export default function RoomsPage() {
             const res = await fetch(`${HTTP_BACKEND}/rooms`);
             const data = await res.json();
             setRooms(data.rooms || []);
-        } catch (e) {
-            console.error("Failed to fetch rooms:", e);
+        } catch {
+            console.error("Failed to fetch rooms");
         }
         setLoading(false);
     }
@@ -105,66 +106,178 @@ export default function RoomsPage() {
     const currentUserId = getCurrentUserId();
 
     return (
-        <div className="min-h-screen bg-gray-900 text-white p-8">
-            <div className="max-w-4xl mx-auto">
-                <div className="flex justify-between items-center mb-8">
-                    <h1 className="text-3xl font-bold">Rooms</h1>
-                    <Link href="/" className="text-blue-400 hover:underline">
-                        ← Back to Home
-                    </Link>
+        <div 
+            className="min-h-screen animate-fade-in" 
+            style={{ 
+                background: "var(--bg-primary)",
+                padding: "40px 20px"
+            }}
+        >
+            <div style={{ 
+                maxWidth: "800px", 
+                margin: "0 auto" 
+            }}>
+                <div style={{ 
+                    display: "flex", 
+                    justifyContent: "space-between", 
+                    alignItems: "center", 
+                    marginBottom: "40px"
+                }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                        <Link 
+                            href="/" 
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                width: "40px",
+                                height: "40px",
+                                borderRadius: "10px",
+                                background: "rgba(255, 255, 255, 0.05)",
+                                border: "1px solid var(--border-subtle)",
+                                color: "var(--text-secondary)",
+                                textDecoration: "none",
+                                transition: "all 0.2s ease"
+                            }}
+                        >
+                            <ArrowLeft size={18} />
+                        </Link>
+                        <div>
+                            <h1 style={{
+                                fontSize: "28px",
+                                fontWeight: "600",
+                                color: "var(--text-primary)",
+                                margin: 0
+                            }}>
+                                Rooms
+                            </h1>
+                            <p style={{
+                                color: "var(--text-muted)",
+                                fontSize: "14px",
+                                margin: "4px 0 0"
+                            }}>
+                                Manage your collaborative spaces
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
-                <div className="bg-gray-800 rounded-lg p-6 mb-8">
-                    <h2 className="text-xl font-semibold mb-4">Create New Room</h2>
-                    <div className="flex gap-4">
+                <div 
+                    className="card-glass"
+                    style={{ 
+                        padding: "24px",
+                        marginBottom: "32px"
+                    }}
+                >
+                    <h2 style={{
+                        fontSize: "16px",
+                        fontWeight: "600",
+                        color: "var(--text-primary)",
+                        marginBottom: "16px"
+                    }}>
+                        Create New Room
+                    </h2>
+                    <div style={{ display: "flex", gap: "12px" }}>
                         <input
                             type="text"
-                            placeholder="Room name"
+                            placeholder="Enter room name"
                             value={newRoomName}
                             onChange={(e) => setNewRoomName(e.target.value)}
-                            className="flex-1 p-3 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 outline-none"
+                            className="input-dark"
+                            style={{ flex: 1 }}
                             onKeyDown={(e) => e.key === "Enter" && createRoom()}
                         />
                         <button
                             onClick={createRoom}
                             disabled={creating || !newRoomName.trim()}
-                            className="px-6 py-3 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-600 rounded font-medium"
+                            className="btn-primary"
+                            style={{ 
+                                padding: "12px 20px",
+                                minWidth: "120px"
+                            }}
                         >
-                            {creating ? "Creating..." : "Create"}
+                            {creating ? "Creating..." : (
+                                <>
+                                    <Plus size={16} style={{ marginRight: "8px" }} />
+                                    Create
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>
 
                 {loading ? (
-                    <div className="text-center py-8">Loading...</div>
+                    <div style={{ 
+                        textAlign: "center", 
+                        padding: "60px 0",
+                        color: "var(--text-muted)"
+                    }}>
+                        Loading...
+                    </div>
                 ) : rooms.length === 0 ? (
-                    <div className="text-center py-8 text-gray-400">
-                        No rooms yet. Create one above!
+                    <div style={{ 
+                        textAlign: "center", 
+                        padding: "60px 0",
+                        color: "var(--text-muted)"
+                    }}>
+                        <Layout size={48} style={{ opacity: 0.3, marginBottom: "16px" }} />
+                        <p>No rooms yet. Create one above!</p>
                     </div>
                 ) : (
-                    <div className="grid gap-4">
+                    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                         {rooms.map((room) => (
                             <div
                                 key={room.id}
-                                className="bg-gray-800 rounded-lg p-6 flex justify-between items-center"
+                                className="card-glass"
+                                style={{
+                                    padding: "20px 24px",
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    transition: "all 0.2s ease"
+                                }}
                             >
                                 <div>
                                     <Link
                                         href={`/canvas/${room.slug}`}
-                                        className="text-xl font-semibold text-blue-400 hover:underline"
+                                        style={{
+                                            fontSize: "18px",
+                                            fontWeight: "600",
+                                            color: "#6366f1",
+                                            textDecoration: "none",
+                                            transition: "opacity 0.2s ease"
+                                        }}
                                     >
                                         {room.slug}
                                     </Link>
-                                    <p className="text-gray-400 text-sm mt-1">
-                                        Created by {room.admin?.name || room.admin?.email} •{" "}
+                                    <p style={{
+                                        color: "var(--text-muted)",
+                                        fontSize: "13px",
+                                        marginTop: "4px"
+                                    }}>
+                                        Created by {room.admin?.name || room.admin?.email} • {" "}
                                         {new Date(room.createdAt).toLocaleDateString()}
                                     </p>
                                 </div>
                                 {currentUserId === room.adminId && (
                                     <button
                                         onClick={() => deleteRoom(room.id)}
-                                        className="px-4 py-2 bg-red-500 hover:bg-red-600 rounded text-sm"
+                                        style={{
+                                            padding: "8px 16px",
+                                            background: "rgba(239, 68, 68, 0.1)",
+                                            border: "1px solid rgba(239, 68, 68, 0.2)",
+                                            borderRadius: "8px",
+                                            color: "#ef4444",
+                                            fontSize: "13px",
+                                            fontWeight: "500",
+                                            cursor: "pointer",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "6px",
+                                            transition: "all 0.2s ease"
+                                        }}
                                     >
+                                        <Trash2 size={14} />
                                         Delete
                                     </button>
                                 )}

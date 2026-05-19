@@ -117,7 +117,7 @@ app.post("/room", middleware, async (req, res) => {
 
 app.get("/chats/:roomId", async (req, res) => {
     try {
-        const roomId = Number(req.params.roomId);
+        const roomId = req.params.roomId;
         console.log(req.params.roomId);
         const messages = await prismaClient.chat.findMany({
             where: {
@@ -185,7 +185,7 @@ app.delete("/room/:id", middleware, async (req, res) => {
         return;
     }
 
-    await prismaClient.chat.deleteMany({ where: { roomId } });
+    await prismaClient.chat.deleteMany({ where: { roomId: room.slug } });
     await prismaClient.room.delete({ where: { id: roomId } });
 
     res.json({ message: "Room deleted successfully" });
