@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { IconButton } from "./IconButton";
-import { Circle, Pencil, RectangleHorizontalIcon, Undo2, Redo2, Minus, Users, ArrowUpRight, Eraser, ZoomIn, ZoomOut } from "lucide-react";
+import { Circle, Pencil, RectangleHorizontalIcon, Undo2, Redo2, Minus, Users, ArrowUpRight, Eraser, ZoomIn, ZoomOut, Type } from "lucide-react";
 import { Game, UserPresence } from "@/draw/Game";
 
-export type Tool = "circle" | "rect" | "pencil" | "line" | "arrow" | "eraser";
+export type Tool = "circle" | "rect" | "pencil" | "line" | "arrow" | "eraser" | "text";
 
 const COLORS = [
     "#ffffff",
@@ -43,6 +43,7 @@ export function Canvas({
     const [joinRoomSlug, setJoinRoomSlug] = useState("");
     const [creatingRoom, setCreatingRoom] = useState(false);
     const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+    const [textInput, setTextInput] = useState<{ x: number; y: number; text: string } | null>(null);
 
     const router = useRouter();
 
@@ -124,6 +125,12 @@ export function Canvas({
     }, [strokeWidth, game]);
 
     useEffect(() => {
+        if (selectedTool !== "text") {
+            setTextInput(null);
+        }
+    }, [selectedTool]);
+
+    useEffect(() => {
         const interval = setInterval(() => {
             setCanUndo(game?.canUndo() ?? false);
             setCanRedo(game?.canRedo() ?? false);
@@ -136,12 +143,16 @@ export function Canvas({
     useEffect(() => {
         if (canvasRef.current) {
             const g = new Game(canvasRef.current, roomId, socket);
+            g.setTool(selectedTool);
+            g.setStrokeColor(strokeColor);
+            g.setStrokeWidth(strokeWidth);
             setGame(g);
 
             return () => {
                 g.destroy();
             }
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [canvasRef, roomId, socket]);
 
     const handleZoomIn = () => {
@@ -160,6 +171,45 @@ export function Canvas({
         game?.resetView();
     };
 
+    const handleToolChange = (tool: Tool) => {
+        setSelectedTool(tool);
+        game?.setTool(tool);
+    };
+
+    const handleColorChange = (color: string) => {
+        setStrokeColor(color);
+        game?.setStrokeColor(color);
+    };
+
+    const handleStrokeWidthChange = (width: number) => {
+        setStrokeWidth(width);
+        game?.setStrokeWidth(width);
+    };
+
+    const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (selectedTool === "text" && !textInput) {
+            e.preventDefault();
+            e.stopPropagation();
+            const rect = canvasRef.current?.getBoundingClientRect();
+            if (rect) {
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                setTimeout(() => {
+                    setTextInput({ x, y, text: "" });
+                }, 0);
+            }
+        }
+    };
+
+    const handleTextSubmit = () => {
+        setTimeout(() => {
+            if (textInput && textInput.text.trim() && game) {
+                game.addText(textInput.x, textInput.y, textInput.text.trim(), strokeColor, strokeWidth * 10);
+                setTextInput(null);
+            }
+        }, 0);
+    };
+
     return (
         <div className="canvas-wrapper">
             <canvas 
@@ -167,14 +217,43 @@ export function Canvas({
                 width={window.innerWidth} 
                 height={window.innerHeight}
                 className="drawing-canvas"
+                onMouseDown={handleCanvasMouseDown}
             />
+            {textInput && (
+                <input
+                    autoFocus
+                    type="text"
+                    value={textInput.text}
+                    onChange={(e) => setTextInput({ ...textInput, text: e.target.value })}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") handleTextSubmit();
+                        if (e.key === "Escape") setTextInput(null);
+                    }}
+                    onBlur={handleTextSubmit}
+                    style={{
+                        position: "fixed",
+                        left: textInput.x,
+                        top: textInput.y,
+                        background: "rgba(0, 0, 0, 0.8)",
+                        border: `1px solid ${strokeColor}`,
+                        borderRadius: "4px",
+                        color: strokeColor,
+                        fontSize: `${strokeWidth * 10}px`,
+                        fontFamily: "sans-serif",
+                        outline: "none",
+                        minWidth: "100px",
+                        padding: "4px 8px",
+                        zIndex: 9999
+                    }}
+                />
+            )}
             <Topbar 
                 selectedTool={selectedTool} 
-                setSelectedTool={setSelectedTool}
+                setSelectedTool={handleToolChange}
                 strokeColor={strokeColor}
-                setStrokeColor={setStrokeColor}
+                setStrokeColor={handleColorChange}
                 strokeWidth={strokeWidth}
-                setStrokeWidth={setStrokeWidth}
+                setStrokeWidth={handleStrokeWidthChange}
                 onUndo={() => game?.undo()}
                 onRedo={() => game?.redo()}
                 canUndo={canUndo}
@@ -518,21 +597,26 @@ function Topbar({
     onOpenRoomModal: () => void
 }) {
     const [isMobile, setIsMobile] = useState(false);
+    const [isTablet, setIsTablet] = useState(false);
 
     useEffect(() => {
-        const checkMobile = () => setIsMobile(window.innerWidth < 640);
-        checkMobile();
-        window.addEventListener("resize", checkMobile);
-        return () => window.removeEventListener("resize", checkMobile);
+        const checkScreen = () => {
+            const width = window.innerWidth;
+            setIsMobile(width < 480);
+            setIsTablet(width >= 480 && width < 1024);
+        };
+        checkScreen();
+        window.addEventListener("resize", checkScreen);
+        return () => window.removeEventListener("resize", checkScreen);
     }, []);
 
-    const iconSize = isMobile ? 16 : 18;
-    const buttonSize = isMobile ? 28 : 36;
-    const dotSize = isMobile ? 14 : 22;
-    const strokeWidthSlider = isMobile ? 50 : 80;
-    const userAvatarSize = isMobile ? 20 : 26;
-    const iconGap = isMobile ? 2 : 8;
-    const separatorHeight = isMobile ? 16 : 24;
+    const iconSize = isMobile ? 14 : isTablet ? 16 : 18;
+    const buttonSize = isMobile ? 24 : isTablet ? 28 : 36;
+    const dotSize = isMobile ? 10 : isTablet ? 14 : 22;
+    const strokeWidthSlider = isMobile ? 40 : isTablet ? 50 : 80;
+    const iconGap = isMobile ? 1 : isTablet ? 2 : 8;
+    const separatorHeight = isMobile ? 14 : isTablet ? 16 : 24;
+    const paddingX = isMobile ? "4px 6px" : isTablet ? "6px 10px" : "8px 16px";
 
     return (
         <div className="toolbar-glass toolbar-container" style={{
@@ -544,10 +628,15 @@ function Topbar({
             display: "flex",
             flexDirection: "row",
             alignItems: "center",
-            gap: isMobile ? 2 : 8,
-            padding: isMobile ? "4px 8px" : "8px 16px",
+            gap: isMobile ? 2 : isTablet ? 4 : 8,
+            padding: paddingX,
             marginTop: 12,
-            maxWidth: isMobile ? "calc(100vw - 20px)" : "fit-content"
+            maxWidth: isMobile ? "calc(100vw - 20px)" : "fit-content",
+            overflowX: "auto",
+            overflowY: "hidden",
+            scrollbarWidth: "thin",
+            scrollbarColor: "rgba(255,255,255,0.3) transparent",
+            WebkitOverflowScrolling: "touch"
         }}>
             <IconButton 
                 onClick={() => setSelectedTool("pencil")}
@@ -583,6 +672,12 @@ function Topbar({
                 onClick={() => setSelectedTool("eraser")}
                 activated={selectedTool === "eraser"}
                 icon={<Eraser size={iconSize} />}
+                size={buttonSize}
+            />
+            <IconButton 
+                onClick={() => setSelectedTool("text")}
+                activated={selectedTool === "text"}
+                icon={<Type size={iconSize} />}
                 size={buttonSize}
             />
             

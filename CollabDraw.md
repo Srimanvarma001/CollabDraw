@@ -1,4 +1,4 @@
-# CollabDraw - Agent Instructions
+%^# CollabDraw - Agent Instructions
 
 ## Project Structure
 

@@ -195,7 +195,7 @@ function App() {
                 gap: "16px",
                 flexWrap: "wrap"
               }}>
-                <Link href="/canvas/test-room">
+                <Link href="/rooms">
                   <button className="btn-primary">
                     <Pencil size={16} style={{ marginRight: "8px" }} />
                     Open Canvas

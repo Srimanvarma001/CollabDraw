@@ -36,7 +36,7 @@ export function AuthPage({ isSignin, returnUrl }: {
                 if (isSignin) {
                     localStorage.setItem("token", data.token);
                     localStorage.setItem("userName", email.split("@")[0] || "User");
-                    router.push(returnUrl || "/canvas/test-room");
+                    router.push(returnUrl || "/rooms");
                 } else {
                     alert("Account created! Please sign in.");
                     router.push("/signin");
