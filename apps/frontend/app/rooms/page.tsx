@@ -243,7 +243,7 @@ export default function RoomsPage() {
                                         style={{
                                             fontSize: "18px",
                                             fontWeight: "600",
-                                            color: "#6366f1",
+                                            color: "#3b82f6",
                                             textDecoration: "none",
                                             transition: "opacity 0.2s ease"
                                         }}

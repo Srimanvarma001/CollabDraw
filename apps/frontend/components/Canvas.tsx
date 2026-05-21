@@ -16,7 +16,7 @@ const COLORS = [
     "#22c55e",
     "#06b6d4",
     "#3b82f6",
-    "#8b5cf6",
+    "#2563eb",
     "#ec4899",
 ];
 
@@ -304,7 +304,7 @@ export function Canvas({
                                         width: "100%",
                                         padding: "12px",
                                         marginBottom: "12px",
-                                        backgroundColor: "#6366f1",
+                                        backgroundColor: "#3b82f6",
                                         border: "none",
                                         borderRadius: "8px",
                                         color: "#fff",
@@ -375,7 +375,7 @@ export function Canvas({
                                     style={{
                                         width: "100%",
                                         padding: "12px",
-                                        backgroundColor: "#6366f1",
+                                        backgroundColor: "#3b82f6",
                                         border: "none",
                                         borderRadius: "8px",
                                         color: "#fff",
@@ -432,7 +432,7 @@ export function Canvas({
                                     style={{
                                         width: "100%",
                                         padding: "12px",
-                                        backgroundColor: "#6366f1",
+                                        backgroundColor: "#3b82f6",
                                         border: "none",
                                         borderRadius: "8px",
                                         color: "#fff",
@@ -506,7 +506,7 @@ export function Canvas({
                                         onClick={() => copyLink(createdRoomSlug)}
                                         style={{
                                             padding: "8px 16px",
-                                            backgroundColor: "#6366f1",
+                                            backgroundColor: "#3b82f6",
                                             border: "none",
                                             borderRadius: "6px",
                                             color: "#fff",
@@ -727,7 +727,7 @@ function Topbar({
                     onChange={(e) => setStrokeWidth(Number(e.target.value))}
                     style={{ 
                         width: `${strokeWidthSlider}px`,
-                        accentColor: "#6366f1"
+                        accentColor: "#3b82f6"
                     }}
                 />
                 <span style={{ 

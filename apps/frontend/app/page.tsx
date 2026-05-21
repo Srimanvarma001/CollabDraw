@@ -5,6 +5,50 @@ function App() {
   return (
     <div className="min-h-screen" style={{ background: "var(--bg-primary)" }}>
       <header className="relative overflow-hidden">
+        <nav style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "16px 24px",
+          position: "fixed",
+          top: 0,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 50,
+          maxWidth: "1200px",
+          width: "100%",
+          background: "rgba(13, 13, 15, 0.85)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          borderBottom: "1px solid rgba(255, 255, 255, 0.08)"
+        }}>
+          <Link href="/" style={{ display: "flex", alignItems: "center", gap: "8px", textDecoration: "none" }}>
+            <div style={{
+              width: "32px",
+              height: "32px",
+              borderRadius: "8px",
+              background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}>
+              <Pencil size={16} color="white" />
+            </div>
+            <span style={{ color: "var(--text-primary)", fontWeight: "600", fontSize: "16px" }}>
+              CollabDraw
+            </span>
+          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <Link href="/signin" style={{ color: "var(--text-secondary)", fontSize: "14px", fontWeight: "500", textDecoration: "none" }}>
+              Sign in
+            </Link>
+            <Link href="/signup">
+              <button className="btn-primary" style={{ padding: "8px 20px", fontSize: "13px" }}>
+                Sign up
+              </button>
+            </Link>
+          </div>
+        </nav>
         <div 
           style={{ 
             position: "absolute", 
@@ -13,46 +57,27 @@ function App() {
             transform: "translateX(-50%)",
             width: "100%",
             height: "100%",
-            background: "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.15) 0%, transparent 60%)",
+            background: "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.15) 0%, transparent 60%)",
             pointerEvents: "none"
           }} 
         />
-        <div className="container mx-auto px-4 py-24 sm:px-6 lg:px-8 relative">
+            <div className="container mx-auto px-4 pt-32 pb-24 sm:px-6 lg:px-8 relative">
           <div className="text-center animate-fade-in">
-            <div style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "8px 16px",
-              background: "rgba(99, 102, 241, 0.1)",
-              border: "1px solid rgba(99, 102, 241, 0.2)",
-              borderRadius: "100px",
-              marginBottom: "24px"
-            }}>
-              <span style={{
-                width: "6px",
-                height: "6px",
-                borderRadius: "50%",
-                background: "#6366f1"
-              }} />
-              <span style={{ color: "var(--text-secondary)", fontSize: "13px", fontWeight: "500" }}>
-                Real-time collaborative whiteboarding
-              </span>
-            </div>
+
             
             <h1 
               className="hero-gradient"
               style={{
-                fontSize: "clamp(36px, 5vw, 64px)",
-                fontWeight: "700",
-                lineHeight: "1.1",
-                letterSpacing: "-0.02em",
-                marginBottom: "24px"
+                fontSize: "clamp(42px, 6.5vw, 80px)",
+                fontWeight: "800",
+                lineHeight: "1.05",
+                letterSpacing: "-0.03em",
+                marginBottom: "28px"
               }}
             >
-              Collaborative Whiteboarding
+              Collaborative&nbsp;Whiteboarding
               <br />
-              Made Simple
+              Made&nbsp;Simple
             </h1>
             <p style={{
               color: "var(--text-secondary)",
@@ -95,7 +120,7 @@ function App() {
 
       <section style={{ 
         padding: "100px 0",
-        background: "linear-gradient(180deg, transparent 0%, rgba(99, 102, 241, 0.03) 100%)"
+        background: "linear-gradient(180deg, transparent 0%, rgba(59, 130, 246, 0.03) 100%)"
       }}>
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div style={{ 
@@ -127,7 +152,7 @@ function App() {
           }}>
             <FeatureCard 
               icon={<Share2 size={24} />}
-              iconBg="linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
+              iconBg="linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)"
               title="Real-time Collaboration"
               description="Work together with your team in real-time. Share your drawings instantly with a simple link."
             />
@@ -167,7 +192,7 @@ function App() {
               transform: "translateX(-50%)",
               width: "100%",
               height: "100%",
-              background: "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(99, 102, 241, 0.1) 0%, transparent 60%)",
+              background: "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(59, 130, 246, 0.1) 0%, transparent 60%)",
               pointerEvents: "none"
             }} />
             
@@ -231,7 +256,7 @@ function App() {
                 width: "32px",
                 height: "32px",
                 borderRadius: "8px",
-                background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+                background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center"

@@ -10,10 +10,10 @@
   --text-primary: #ffffff;
   --text-secondary: rgba(255, 255, 255, 0.7);
   --text-muted: rgba(255, 255, 255, 0.4);
-  --accent: #6366f1;
-  --accent-secondary: #8b5cf6;
-  --accent-glow: rgba(99, 102, 241, 0.2);
-  --accent-subtle: rgba(99, 102, 241, 0.1);
+  --accent: #3b82f6;
+  --accent-secondary: #2563eb;
+  --accent-glow: rgba(59, 130, 246, 0.2);
+  --accent-subtle: rgba(59, 130, 246, 0.1);
   --danger: #ef4444;
 
   --background: var(--bg-primary);
@@ -41,7 +41,6 @@ html, body {
   max-width: 1200px;
   width: 100%;
   margin: 0 auto;
-  padding: 0 24px;
 }
 
 @media (max-width: 480px) {
@@ -106,7 +105,7 @@ body::before {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.08) 0%, transparent 50%);
+  background-image: radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.08) 0%, transparent 50%);
   z-index: -1;
 }
 
@@ -187,7 +186,7 @@ body::before {
 
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
 }
 
 .btn-primary:active {
@@ -231,7 +230,7 @@ body::before {
 }
 
 .hero-gradient {
-  background: linear-gradient(135deg, var(--text-primary) 0%, #c4b5fd 100%);
+  background: linear-gradient(135deg, var(--text-primary) 0%, #93c5fd 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -248,7 +247,7 @@ body::before {
 }
 
 .feature-card:hover .feature-card-accent {
-  background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%);
+  background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
 }
 
 @media (max-width: 768px) {

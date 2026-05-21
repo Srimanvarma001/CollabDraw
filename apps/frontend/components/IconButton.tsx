@@ -22,15 +22,15 @@ export function IconButton({
                 cursor: disabled ? "not-allowed" : "pointer",
                 transition: "all 0.15s ease",
                 background: activated 
-                    ? "rgba(99, 102, 241, 0.2)" 
+                    ? "rgba(59, 130, 246, 0.2)" 
                     : "transparent",
                 color: disabled 
                     ? "rgba(255, 255, 255, 0.3)" 
                     : activated 
-                        ? "#6366f1" 
+                        ? "#3b82f6" 
                         : "rgba(255, 255, 255, 0.7)",
                 border: activated 
-                    ? "1px solid rgba(99, 102, 241, 0.3)" 
+                    ? "1px solid rgba(59, 130, 246, 0.3)" 
                     : "1px solid transparent",
                 opacity: disabled ? 0.5 : 1
             }}

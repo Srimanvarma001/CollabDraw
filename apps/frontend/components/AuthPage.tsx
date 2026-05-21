@@ -61,7 +61,7 @@ export function AuthPage({ isSignin, returnUrl }: {
                         width: "56px", 
                         height: "56px", 
                         borderRadius: "16px",
-                        background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+                        background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
                         marginBottom: "16px"
                     }}>
                         <Pencil size={28} color="white" />
@@ -193,7 +193,7 @@ export function AuthPage({ isSignin, returnUrl }: {
                             <Link 
                                 href="/signup" 
                                 style={{ 
-                                    color: "#6366f1", 
+                                    color: "#3b82f6", 
                                     fontWeight: "500",
                                     textDecoration: "none"
                                 }}
@@ -207,7 +207,7 @@ export function AuthPage({ isSignin, returnUrl }: {
                             <Link 
                                 href="/signin" 
                                 style={{ 
-                                    color: "#6366f1", 
+                                    color: "#3b82f6", 
                                     fontWeight: "500",
                                     textDecoration: "none"
                                 }}
