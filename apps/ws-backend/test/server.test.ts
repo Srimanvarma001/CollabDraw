@@ -1,0 +1,187 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { WebSocket, WebSocketServer } from "ws";
+import { AddressInfo } from "node:net";
+import jwt from "jsonwebtoken";
+import { JWT_SECRET } from "@repo/backend-common";
+
+const db = vi.hoisted(() => ({
+    prismaClient: {
+        room: { findUnique: vi.fn() },
+        user: { findUnique: vi.fn() },
+        chat: { create: vi.fn() },
+    },
+}));
+vi.mock("@repo/db", () => db);
+
+const { createWsServer, CLOSE_UNAUTHORIZED, isValidDrawMessage } = await import("../src/server.js");
+const prisma = db.prismaClient;
+
+let wss: WebSocketServer;
+let url: string;
+const open: WebSocket[] = [];
+
+beforeAll(async () => {
+    wss = createWsServer({ port: 0 });
+    await new Promise((resolve) => wss.once("listening", resolve));
+    url = `ws://localhost:${(wss.address() as AddressInfo).port}`;
+});
+
+afterAll(async () => {
+    open.forEach((ws) => ws.terminate());
+    await new Promise((resolve) => wss.close(resolve));
+});
+
+beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.room.findUnique.mockImplementation(async ({ where }: { where: { slug: string } }) =>
+        where.slug === "missing" ? null : { id: 1, slug: where.slug });
+    prisma.user.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({ name: `Name of ${where.id}` }));
+    prisma.chat.create.mockResolvedValue({});
+});
+
+/** A test client that records everything it receives. */
+async function connect(userId: string | null) {
+    const token = userId ? jwt.sign({ userId }, JWT_SECRET) : "bad";
+    const ws = new WebSocket(`${url}?token=${token}`);
+    open.push(ws);
+    const received: any[] = [];
+    ws.on("message", (data) => received.push(JSON.parse(data.toString())));
+
+    const client = {
+        ws,
+        received,
+        send: (msg: object) => ws.send(JSON.stringify(msg)),
+        /** Waits until a message matching `pred` arrives. */
+        waitFor: (pred: (m: any) => boolean) => new Promise<any>((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error(`timed out; got ${JSON.stringify(received)}`)), 2000);
+            const check = () => {
+                const found = received.find(pred);
+                if (found) {
+                    clearTimeout(timer);
+                    ws.off("message", check);
+                    resolve(found);
+                }
+            };
+            ws.on("message", check);
+            check();
+        }),
+        join: async (roomId: string) => {
+            client.send({ type: "join_room", roomId });
+            return client.waitFor((m) => m.type === "joined" || m.type === "error");
+        },
+    };
+    if (userId) await new Promise((resolve) => ws.once("open", resolve));
+    return client;
+}
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+const lastPresence = (c: { received: any[] }) =>
+    [...c.received].reverse().find((m) => m.type === "presence")?.users.map((u: any) => u.userId).sort();
+
+describe("ws-backend", () => {
+    it("closes connections with a bad token", async () => {
+        const client = await connect(null);
+        const code = await new Promise((resolve) => client.ws.once("close", resolve));
+        expect(code).toBe(CLOSE_UNAUTHORIZED);
+    });
+
+    it("refuses to join a room that does not exist", async () => {
+        const a = await connect("a");
+        const reply = await a.join("missing");
+        expect(reply).toMatchObject({ type: "error", code: "room_not_found" });
+    });
+
+    it("does not store ops for a room the sender has not joined", async () => {
+        const a = await connect("a");
+        a.send({ type: "chat", roomId: "r1", message: JSON.stringify({ op: "delete", ids: ["x"] }) });
+        await a.waitFor((m) => m.code === "not_in_room");
+        expect(prisma.chat.create).not.toHaveBeenCalled();
+    });
+
+    it("stores ops and sends them to everyone in the room except the sender", async () => {
+        const a = await connect("a");
+        const b = await connect("b");
+        const outsider = await connect("c");
+        await a.join("r1");
+        await b.join("r1");
+        await outsider.join("r2");
+
+        const message = JSON.stringify({ op: "add", shape: { id: "s1", type: "rect" } });
+        a.send({ type: "chat", roomId: "r1", message });
+
+        await b.waitFor((m) => m.type === "chat");
+        await settle();
+        expect(prisma.chat.create).toHaveBeenCalledWith({ data: { roomId: "r1", message, userId: "a" } });
+        expect(a.received.some((m) => m.type === "chat")).toBe(false);
+        expect(outsider.received.some((m) => m.type === "chat")).toBe(false);
+    });
+
+    it("rejects malformed drawing messages", async () => {
+        const a = await connect("a");
+        await a.join("r1");
+        a.send({ type: "chat", roomId: "r1", message: "not json" });
+        a.send({ type: "chat", roomId: "r1", message: JSON.stringify({ op: "drop-table" }) });
+        await settle();
+        expect(prisma.chat.create).not.toHaveBeenCalled();
+    });
+
+    it("sends presence to the user who joins, with names from the database", async () => {
+        const a = await connect("a");
+        await a.join("fresh-room");
+        const presence = await a.waitFor((m) => m.type === "presence");
+        expect(presence.users).toEqual([{ userId: "a", userName: "Name of a" }]);
+    });
+
+    it("keeps a user present while they still have another tab open", async () => {
+        const tab1 = await connect("a");
+        const tab2 = await connect("a");
+        const watcher = await connect("w");
+        await watcher.join("presence-room");
+        await tab1.join("presence-room");
+        await tab2.join("presence-room");
+        await settle();
+        expect(lastPresence(watcher)).toEqual(["a", "w"]);
+
+        tab1.ws.close();
+        await settle();
+        expect(lastPresence(watcher)).toEqual(["a", "w"]);
+
+        tab2.ws.close();
+        await settle();
+        expect(lastPresence(watcher)).toEqual(["w"]);
+    });
+
+    it("relays cursors to others only", async () => {
+        const a = await connect("a");
+        const b = await connect("b");
+        await a.join("cursor-room");
+        await b.join("cursor-room");
+        a.send({ type: "cursor", roomId: "cursor-room", cursor: { x: 1, y: 2 } });
+        const cursor = await b.waitFor((m) => m.type === "cursor");
+        expect(cursor).toMatchObject({ userId: "a", cursor: { x: 1, y: 2 } });
+        await settle();
+        expect(a.received.some((m) => m.type === "cursor")).toBe(false);
+    });
+
+    it("processes a join before the ops sent right after it", async () => {
+        // A slow DB lookup must not let the following op skip the membership check.
+        prisma.room.findUnique.mockImplementation(async ({ where }: { where: { slug: string } }) => {
+            await new Promise((r) => setTimeout(r, 30));
+            return { id: 1, slug: where.slug };
+        });
+        const a = await connect("a");
+        a.send({ type: "join_room", roomId: "slow" });
+        a.send({ type: "chat", roomId: "slow", message: JSON.stringify({ op: "delete", ids: ["x"] }) });
+        await settle();
+        await settle();
+        expect(prisma.chat.create).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("isValidDrawMessage", () => {
+    it("accepts known ops only", () => {
+        expect(isValidDrawMessage(JSON.stringify({ op: "update", shape: {} }))).toBe(true);
+        expect(isValidDrawMessage(JSON.stringify({ shape: {} }))).toBe(false);
+        expect(isValidDrawMessage(42)).toBe(false);
+    });
+});
