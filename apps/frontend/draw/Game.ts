@@ -1,7 +1,7 @@
 import { Tool } from "@/components/Canvas";
 import { getRoomState } from "./http";
 import { DrawOp, Shape, ShapeWithoutId, applyOp, newShapeId, parseRoomMessage } from "./shapes";
-import { getBounds, hitTest, isPointNearShape, translateShape } from "./geometry";
+import { getBounds, hitTest, isPointNearShape, translateShape, unionBounds } from "./geometry";
 
 export type { Shape } from "./shapes";
 
@@ -292,6 +292,34 @@ export class Game {
         this.ctx.restore();
     }
 
+    /**
+     * Renders every shape (not just what is on screen) to a PNG at 2x scale.
+     * Resolves to null when the canvas is empty.
+     */
+    exportPng(): Promise<Blob | null> {
+        const bounds = unionBounds(this.existingShapes);
+        if (!bounds) return Promise.resolve(null);
+
+        const padding = 40;
+        const width = bounds.maxX - bounds.minX + padding * 2;
+        const height = bounds.maxY - bounds.minY + padding * 2;
+        // Browsers refuse very large canvases; scale down huge drawings.
+        const scale = Math.min(2, 8000 / Math.max(width, height));
+
+        const out = document.createElement("canvas");
+        out.width = Math.ceil(width * scale);
+        out.height = Math.ceil(height * scale);
+        const ctx = out.getContext("2d")!;
+        ctx.fillStyle = "#0f0f14";
+        ctx.fillRect(0, 0, out.width, out.height);
+        ctx.scale(scale, scale);
+        ctx.translate(padding - bounds.minX, padding - bounds.minY);
+        for (const shape of this.existingShapes) {
+            this.drawShape(shape, ctx);
+        }
+        return new Promise((resolve) => out.toBlob(resolve, "image/png"));
+    }
+
     /** Deletes the selected shape (undoable). */
     deleteSelected() {
         const shape = this.getSelectedShape();
@@ -349,59 +377,59 @@ export class Game {
         });
     }
 
-    private drawShape(shape: Shape) {
-        this.ctx.strokeStyle = shape.strokeColor;
+    private drawShape(shape: Shape, ctx: CanvasRenderingContext2D = this.ctx) {
+        ctx.strokeStyle = shape.strokeColor;
         if (shape.type !== "text") {
-            this.ctx.lineWidth = shape.strokeWidth;
+            ctx.lineWidth = shape.strokeWidth;
         }
-        this.ctx.lineCap = "round";
-        this.ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
 
         if (shape.type === "text") {
-            this.ctx.font = `${shape.fontSize}px sans-serif`;
-            this.ctx.fillStyle = shape.strokeColor;
-            this.ctx.fillText(shape.text, shape.x, shape.y);
+            ctx.font = `${shape.fontSize}px sans-serif`;
+            ctx.fillStyle = shape.strokeColor;
+            ctx.fillText(shape.text, shape.x, shape.y);
         } else if (shape.type === "rect") {
-            this.ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
+            ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
         } else if (shape.type === "circle") {
-            this.ctx.beginPath();
-            this.ctx.arc(shape.centerX, shape.centerY, Math.abs(shape.radius), 0, Math.PI * 2);
-            this.ctx.stroke();
-            this.ctx.closePath();
+            ctx.beginPath();
+            ctx.arc(shape.centerX, shape.centerY, Math.abs(shape.radius), 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.closePath();
         } else if (shape.type === "line") {
-            this.ctx.beginPath();
-            this.ctx.moveTo(shape.startX, shape.startY);
-            this.ctx.lineTo(shape.endX, shape.endY);
-            this.ctx.stroke();
-            this.ctx.closePath();
+            ctx.beginPath();
+            ctx.moveTo(shape.startX, shape.startY);
+            ctx.lineTo(shape.endX, shape.endY);
+            ctx.stroke();
+            ctx.closePath();
         } else if (shape.type === "arrow") {
-            this.drawArrow(shape.startX, shape.startY, shape.endX, shape.endY);
+            this.drawArrow(shape.startX, shape.startY, shape.endX, shape.endY, ctx);
         } else if (shape.type === "pencil" && shape.points.length > 0) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(shape.points[0].x, shape.points[0].y);
+            ctx.beginPath();
+            ctx.moveTo(shape.points[0].x, shape.points[0].y);
             for (let i = 1; i < shape.points.length; i++) {
-                this.ctx.lineTo(shape.points[i].x, shape.points[i].y);
+                ctx.lineTo(shape.points[i].x, shape.points[i].y);
             }
-            this.ctx.stroke();
-            this.ctx.closePath();
+            ctx.stroke();
+            ctx.closePath();
         }
     }
 
-    private drawArrow(fromX: number, fromY: number, toX: number, toY: number) {
+    private drawArrow(fromX: number, fromY: number, toX: number, toY: number, ctx: CanvasRenderingContext2D = this.ctx) {
         const headLength = 15;
         const angle = Math.atan2(toY - fromY, toX - fromX);
         
-        this.ctx.beginPath();
-        this.ctx.moveTo(fromX, fromY);
-        this.ctx.lineTo(toX, toY);
-        this.ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(fromX, fromY);
+        ctx.lineTo(toX, toY);
+        ctx.stroke();
         
-        this.ctx.beginPath();
-        this.ctx.moveTo(toX, toY);
-        this.ctx.lineTo(toX - headLength * Math.cos(angle - Math.PI / 6), toY - headLength * Math.sin(angle - Math.PI / 6));
-        this.ctx.moveTo(toX, toY);
-        this.ctx.lineTo(toX - headLength * Math.cos(angle + Math.PI / 6), toY - headLength * Math.sin(angle + Math.PI / 6));
-        this.ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(toX, toY);
+        ctx.lineTo(toX - headLength * Math.cos(angle - Math.PI / 6), toY - headLength * Math.sin(angle - Math.PI / 6));
+        ctx.moveTo(toX, toY);
+        ctx.lineTo(toX - headLength * Math.cos(angle + Math.PI / 6), toY - headLength * Math.sin(angle + Math.PI / 6));
+        ctx.stroke();
     }
 
     /**

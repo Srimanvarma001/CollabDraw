@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { IconButton } from "./IconButton";
-import { Circle, Pencil, RectangleHorizontalIcon, Undo2, Redo2, Minus, Users, ArrowUpRight, Eraser, ZoomIn, ZoomOut, Type, MousePointer2 } from "lucide-react";
+import { Circle, Pencil, RectangleHorizontalIcon, Undo2, Redo2, Minus, Users, ArrowUpRight, Eraser, ZoomIn, ZoomOut, Type, MousePointer2, Download } from "lucide-react";
 import { Game, UserPresence } from "@/draw/Game";
 import { HTTP_BACKEND } from "@/config";
 import { describeError } from "@/lib/errors";
@@ -163,6 +163,20 @@ export function Canvas({
         game?.setUsers(users);
     }, [game, users]);
 
+    const handleExport = async () => {
+        const blob = await game?.exportPng();
+        if (!blob) {
+            alert("Nothing to export yet - draw something first.");
+            return;
+        }
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${roomId}.png`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
     const handleZoomIn = () => {
         const centerX = window.innerWidth / 2;
         const centerY = window.innerHeight / 2;
@@ -272,6 +286,7 @@ export function Canvas({
                 onZoomOut={handleZoomOut}
                 onResetZoom={handleResetZoom}
                 onOpenRoomModal={() => setShowRoomModal(true)}
+                onExport={handleExport}
             />
 
             {showRoomModal && (
@@ -585,7 +600,8 @@ function Topbar({
     onZoomIn,
     onZoomOut,
     onResetZoom,
-    onOpenRoomModal
+    onOpenRoomModal,
+    onExport
 }: {
     selectedTool: Tool,
     setSelectedTool: (s: Tool) => void,
@@ -602,7 +618,8 @@ function Topbar({
     onZoomIn: () => void,
     onZoomOut: () => void,
     onResetZoom: () => void,
-    onOpenRoomModal: () => void
+    onOpenRoomModal: () => void,
+    onExport: () => void
 }) {
     const [isMobile, setIsMobile] = useState(false);
     const [isTablet, setIsTablet] = useState(false);
@@ -876,6 +893,21 @@ function Topbar({
                 onClick={onZoomIn}
                 title="Zoom in"
                 icon={<ZoomIn size={iconSize} />}
+                size={buttonSize}
+            />
+
+            <div style={{ 
+                width: "1px", 
+                height: separatorHeight, 
+                backgroundColor: "rgba(255, 255, 255, 0.15)", 
+                margin: isMobile ? "0 4px" : "0 8px",
+                flexShrink: 0
+            }} />
+
+            <IconButton 
+                onClick={onExport}
+                title="Export as PNG"
+                icon={<Download size={iconSize} />}
                 size={buttonSize}
             />
         </div>
