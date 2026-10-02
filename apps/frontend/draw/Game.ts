@@ -90,6 +90,9 @@ export class Game {
     };
 
     private initResizeHandler() {
+        // Game owns the canvas size (setting it from React would clear the drawing).
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
         window.addEventListener("resize", this.resizeHandler);
     }
 

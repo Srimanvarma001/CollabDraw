@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconButton } from "./IconButton";
 import { Circle, Pencil, RectangleHorizontalIcon, Undo2, Redo2, Minus, Users, ArrowUpRight, Eraser, ZoomIn, ZoomOut, Type, MousePointer2, Download, MessageSquare } from "lucide-react";
@@ -56,7 +56,6 @@ export function Canvas({
     const [createdRoomSlug, setCreatedRoomSlug] = useState("");
     const [joinRoomSlug, setJoinRoomSlug] = useState("");
     const [creatingRoom, setCreatingRoom] = useState(false);
-    const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
     const [textInput, setTextInput] = useState<{ x: number; y: number; text: string } | null>(null);
     const [chat, setChat] = useState<ChatEntry[]>([]);
     const [chatOpen, setChatOpen] = useState(false);
@@ -70,16 +69,6 @@ export function Canvas({
     }, []);
 
     const router = useRouter();
-
-    const updateCanvasSize = useCallback(() => {
-        setCanvasSize({ width: window.innerWidth, height: window.innerHeight });
-    }, []);
-
-    useEffect(() => {
-        updateCanvasSize();
-        window.addEventListener("resize", updateCanvasSize);
-        return () => window.removeEventListener("resize", updateCanvasSize);
-    }, [updateCanvasSize]);
 
     async function handleCreateRoom() {
         if (!roomName.trim()) return;
@@ -265,8 +254,6 @@ export function Canvas({
         <div className="canvas-wrapper">
             <canvas 
                 ref={canvasRef} 
-                width={window.innerWidth} 
-                height={window.innerHeight}
                 className="drawing-canvas"
                 onMouseDown={handleCanvasMouseDown}
             />
