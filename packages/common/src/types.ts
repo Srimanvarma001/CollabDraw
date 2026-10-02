@@ -19,5 +19,15 @@ export const SigninSchema = z.object({
 export const CreateRoomSchema = z.object({
     // The name becomes the room's URL slug.
     name: z.string().trim().min(3).max(50)
-        .regex(/^[a-zA-Z0-9_-]+$/, "Use only letters, numbers, - and _")
+        .regex(/^[a-zA-Z0-9_-]+$/, "Use only letters, numbers, - and _"),
+    isPrivate: z.boolean().optional().default(false)
+})
+
+export const UpdateRoomSchema = z.object({
+    isPrivate: z.boolean()
+})
+
+export const InviteMemberSchema = z.object({
+    // The invitee's username (the email they signed up with).
+    username: z.string().trim().min(3).max(254)
 })

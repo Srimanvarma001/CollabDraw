@@ -11,7 +11,7 @@ import { UserPresence } from "@/draw/Game";
 const CLOSE_UNAUTHORIZED = 4001;
 const MAX_RECONNECT_DELAY_MS = 15_000;
 
-type Status = "connecting" | "connected" | "reconnecting" | "room_not_found";
+type Status = "connecting" | "connected" | "reconnecting" | "room_not_found" | "forbidden";
 
 export function RoomCanvas({roomId}: {roomId: string}) {
     const [socket, setSocket] = useState<WebSocket | null>(null);
@@ -38,7 +38,8 @@ export function RoomCanvas({roomId}: {roomId: string}) {
         function connect() {
             const current = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token!)}`);
             ws = current;
-            let roomMissing = false;
+            // Set when the server refused the room; don't retry in that case.
+            let refused = false;
 
             current.onopen = () => {
                 current.send(JSON.stringify({ type: "join_room", roomId, userName }));
@@ -57,15 +58,15 @@ export function RoomCanvas({roomId}: {roomId: string}) {
                     setStatus("connected");
                 } else if (message.type === "presence" && message.roomId === roomId) {
                     setUsers(message.users ?? []);
-                } else if (message.type === "error" && message.code === "room_not_found") {
-                    roomMissing = true;
-                    setStatus("room_not_found");
+                } else if (message.type === "error" && (message.code === "room_not_found" || message.code === "forbidden")) {
+                    refused = true;
+                    setStatus(message.code);
                     current.close();
                 }
             });
 
             current.onclose = (event) => {
-                if (disposed || roomMissing) return;
+                if (disposed || refused) return;
                 if (event.code === CLOSE_UNAUTHORIZED) {
                     // Token is invalid or expired: sign in again.
                     localStorage.removeItem("token");
@@ -91,6 +92,14 @@ export function RoomCanvas({roomId}: {roomId: string}) {
     if (status === "room_not_found") {
         return <div className="flex flex-col items-center justify-center h-screen gap-4">
             <div className="text-white text-xl">Room &quot;{roomId}&quot; does not exist.</div>
+            <Link href="/rooms" style={{ color: "#3b82f6" }}>Back to rooms</Link>
+        </div>;
+    }
+
+    if (status === "forbidden") {
+        return <div className="flex flex-col items-center justify-center h-screen gap-4">
+            <div className="text-white text-xl">&quot;{roomId}&quot; is a private room.</div>
+            <div style={{ color: "rgba(255,255,255,0.6)" }}>Ask the room&apos;s owner to invite you.</div>
             <Link href="/rooms" style={{ color: "#3b82f6" }}>Back to rooms</Link>
         </div>;
     }

@@ -7,11 +7,19 @@ import { JWT_SECRET } from "@repo/backend-common";
 const db = vi.hoisted(() => ({
     prismaClient: {
         room: { findUnique: vi.fn() },
+        roomMember: { findUnique: vi.fn() },
         user: { findUnique: vi.fn() },
         chat: { create: vi.fn() },
     },
 }));
-vi.mock("@repo/db", () => db);
+vi.mock("@repo/db", async () => {
+    // Use the real access rules, running against the mocked client.
+    const actual = await vi.importActual<typeof import("@repo/db")>("@repo/db");
+    return {
+        ...db,
+        canAccessRoom: (room: any, userId: string | undefined) => actual.canAccessRoom(room, userId, db.prismaClient as any),
+    };
+});
 
 const { createWsServer, CLOSE_UNAUTHORIZED, normalizeRoomMessage, MAX_CHAT_LENGTH } = await import("../src/server.js");
 const prisma = db.prismaClient;
@@ -34,7 +42,10 @@ afterAll(async () => {
 beforeEach(() => {
     vi.clearAllMocks();
     prisma.room.findUnique.mockImplementation(async ({ where }: { where: { slug: string } }) =>
-        where.slug === "missing" ? null : { id: 1, slug: where.slug });
+        where.slug === "missing" ? null
+            : { id: 1, slug: where.slug, adminId: "owner", isPrivate: where.slug.startsWith("private") });
+    prisma.roomMember.findUnique.mockImplementation(async ({ where }: any) =>
+        where.roomId_userId.userId === "member" ? { id: 1 } : null);
     prisma.user.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({ name: `Name of ${where.id}` }));
     prisma.chat.create.mockResolvedValue({});
 });
@@ -89,6 +100,12 @@ describe("ws-backend", () => {
         const a = await connect("a");
         const reply = await a.join("missing");
         expect(reply).toMatchObject({ type: "error", code: "room_not_found" });
+    });
+
+    it("only lets the admin and members join a private room", async () => {
+        expect(await (await connect("outsider")).join("private-room")).toMatchObject({ type: "error", code: "forbidden" });
+        expect(await (await connect("owner")).join("private-room")).toMatchObject({ type: "joined" });
+        expect(await (await connect("member")).join("private-room")).toMatchObject({ type: "joined" });
     });
 
     it("does not store ops for a room the sender has not joined", async () => {
@@ -180,7 +197,7 @@ describe("ws-backend", () => {
         // A slow DB lookup must not let the following op skip the membership check.
         prisma.room.findUnique.mockImplementation(async ({ where }: { where: { slug: string } }) => {
             await new Promise((r) => setTimeout(r, 30));
-            return { id: 1, slug: where.slug };
+            return { id: 1, slug: where.slug, adminId: "owner", isPrivate: false };
         });
         const a = await connect("a");
         a.send({ type: "join_room", roomId: "slow" });

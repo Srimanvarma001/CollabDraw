@@ -52,6 +52,7 @@ export function Canvas({
     const [showRoomModal, setShowRoomModal] = useState(false);
     const [roomModalMode, setRoomModalMode] = useState<"select" | "create" | "join" | "created">("select");
     const [roomName, setRoomName] = useState("");
+    const [roomPrivate, setRoomPrivate] = useState(false);
     const [createdRoomSlug, setCreatedRoomSlug] = useState("");
     const [joinRoomSlug, setJoinRoomSlug] = useState("");
     const [creatingRoom, setCreatingRoom] = useState(false);
@@ -97,7 +98,7 @@ export function Canvas({
                     "Content-Type": "application/json",
                     "Authorization": `Bearer ${token}`
                 },
-                body: JSON.stringify({ name: roomName.trim() })
+                body: JSON.stringify({ name: roomName.trim(), isPrivate: roomPrivate })
             });
             if (res.ok) {
                 const data = await res.json();
@@ -364,7 +365,7 @@ export function Canvas({
                                     Rooms
                                 </h2>
                                 <button
-                                    onClick={() => { setRoomModalMode("create"); setRoomName(""); }}
+                                    onClick={() => { setRoomModalMode("create"); setRoomName(""); setRoomPrivate(false); }}
                                     style={{
                                         width: "100%",
                                         padding: "12px",
@@ -434,6 +435,10 @@ export function Canvas({
                                     }}
                                     onKeyDown={(e) => e.key === "Enter" && handleCreateRoom()}
                                 />
+                                <label style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px", fontSize: "14px", color: "rgba(255, 255, 255, 0.8)", cursor: "pointer" }}>
+                                    <input type="checkbox" checked={roomPrivate} onChange={(e) => setRoomPrivate(e.target.checked)} />
+                                    Private (invite people from the Rooms page)
+                                </label>
                                 <button
                                     onClick={handleCreateRoom}
                                     disabled={creatingRoom}

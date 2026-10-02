@@ -4,21 +4,25 @@ import { useEffect, useState } from "react";
 import { HTTP_BACKEND } from "@/config";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Trash2, ArrowLeft, Layout } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, Layout, Lock, Users, Globe } from "lucide-react";
 import { describeError } from "@/lib/errors";
 import { getCurrentUserId } from "@/lib/auth";
+import { MembersPanel } from "@/components/MembersPanel";
 
 interface Room {
     id: number;
     slug: string;
     createdAt: string;
     adminId: string;
-    admin: { name: string; email: string };
+    isPrivate: boolean;
+    admin: { name: string };
 }
 
 export default function RoomsPage() {
     const [rooms, setRooms] = useState<Room[]>([]);
     const [newRoomName, setNewRoomName] = useState("");
+    const [newRoomPrivate, setNewRoomPrivate] = useState(false);
+    const [membersOpenFor, setMembersOpenFor] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
     const router = useRouter();
@@ -31,7 +35,10 @@ export default function RoomsPage() {
 
     async function fetchRooms() {
         try {
-            const res = await fetch(`${HTTP_BACKEND}/rooms`);
+            // Signed-in users also see private rooms they own or were invited to.
+            const res = await fetch(`${HTTP_BACKEND}/rooms`, {
+                headers: token ? { "Authorization": `Bearer ${token}` } : {}
+            });
             const data = await res.json();
             setRooms(data.rooms || []);
         } catch {
@@ -56,11 +63,12 @@ export default function RoomsPage() {
                     "Content-Type": "application/json",
                     "Authorization": `Bearer ${token}`
                 },
-                body: JSON.stringify({ name: newRoomName.trim() })
+                body: JSON.stringify({ name: newRoomName.trim(), isPrivate: newRoomPrivate })
             });
 
             if (res.ok) {
                 setNewRoomName("");
+                setNewRoomPrivate(false);
                 fetchRooms();
             } else {
                 const data = await res.json();
@@ -70,6 +78,21 @@ export default function RoomsPage() {
             alert("Something went wrong");
         }
         setCreating(false);
+    }
+
+    async function setPrivacy(room: Room, isPrivate: boolean) {
+        if (!token) return;
+        const res = await fetch(`${HTTP_BACKEND}/room/${room.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({ isPrivate })
+        });
+        if (res.ok) {
+            setRooms(prev => prev.map(r => r.id === room.id ? { ...r, isPrivate } : r));
+            if (!isPrivate && membersOpenFor === room.id) setMembersOpenFor(null);
+        } else {
+            alert(describeError(await res.json()) || "Failed to update room");
+        }
     }
 
     async function deleteRoom(roomId: number) {
@@ -196,6 +219,15 @@ export default function RoomsPage() {
                             )}
                         </button>
                     </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, color: "var(--text-secondary)", fontSize: 14, cursor: "pointer" }}>
+                        <input
+                            type="checkbox"
+                            checked={newRoomPrivate}
+                            onChange={(e) => setNewRoomPrivate(e.target.checked)}
+                        />
+                        <Lock size={14} />
+                        Private (only people you invite can open it)
+                    </label>
                 </div>
 
                 {loading ? (
@@ -223,12 +255,16 @@ export default function RoomsPage() {
                                 className="card-glass"
                                 style={{
                                     padding: "20px 24px",
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
                                     transition: "all 0.2s ease"
                                 }}
                             >
+                            <div style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                gap: "12px",
+                                flexWrap: "wrap"
+                            }}>
                                 <div>
                                     <Link
                                         href={`/canvas/${room.slug}`}
@@ -242,16 +278,37 @@ export default function RoomsPage() {
                                     >
                                         {room.slug}
                                     </Link>
+                                    {room.isPrivate && (
+                                        <Lock size={14} aria-label="Private room" style={{ marginLeft: 8, color: "var(--text-muted)", verticalAlign: "middle" }} />
+                                    )}
                                     <p style={{
                                         color: "var(--text-muted)",
                                         fontSize: "13px",
                                         marginTop: "4px"
                                     }}>
-                                        Created by {room.admin?.name || room.admin?.email} • {" "}
+                                        Created by {room.admin?.name} • {" "}
                                         {new Date(room.createdAt).toLocaleDateString()}
                                     </p>
                                 </div>
                                 {currentUserId === room.adminId && (
+                                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                    {room.isPrivate && (
+                                        <button
+                                            onClick={() => setMembersOpenFor(membersOpenFor === room.id ? null : room.id)}
+                                            aria-expanded={membersOpenFor === room.id}
+                                            style={secondaryButtonStyle}
+                                        >
+                                            <Users size={14} />
+                                            Members
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setPrivacy(room, !room.isPrivate)}
+                                        style={secondaryButtonStyle}
+                                    >
+                                        {room.isPrivate ? <Globe size={14} /> : <Lock size={14} />}
+                                        {room.isPrivate ? "Make public" : "Make private"}
+                                    </button>
                                     <button
                                         onClick={() => deleteRoom(room.id)}
                                         style={{
@@ -272,7 +329,12 @@ export default function RoomsPage() {
                                         <Trash2 size={14} />
                                         Delete
                                     </button>
+                                    </div>
                                 )}
+                            </div>
+                            {membersOpenFor === room.id && token && (
+                                <MembersPanel roomId={room.id} token={token} />
+                            )}
                             </div>
                         ))}
                     </div>
@@ -281,3 +343,17 @@ export default function RoomsPage() {
         </div>
     );
 }
+
+const secondaryButtonStyle: React.CSSProperties = {
+    padding: "8px 14px",
+    background: "rgba(255, 255, 255, 0.05)",
+    border: "1px solid var(--border-subtle)",
+    borderRadius: "8px",
+    color: "var(--text-secondary)",
+    fontSize: "13px",
+    fontWeight: "500",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px"
+};

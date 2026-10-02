@@ -15,6 +15,7 @@ model User {
   photo         String?
   rooms         Room[]
   chats         Chat[]
+  memberships   RoomMember[]
 }
 
 model Room {
@@ -22,8 +23,23 @@ model Room {
   slug        String    @unique
   createdAt   DateTime  @default(now())
   adminId     String
+  // Private rooms are only visible to the admin and invited members.
+  isPrivate   Boolean   @default(false)
   admin       User      @relation(fields: [adminId], references: [id])
   chats       Chat[]
+  members     RoomMember[]
+}
+
+/// A user invited to a private room.
+model RoomMember {
+  id        Int       @id @default(autoincrement())
+  roomId    Int
+  userId    String
+  createdAt DateTime  @default(now())
+  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
 }
 
 model Chat {

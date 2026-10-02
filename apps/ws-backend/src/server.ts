@@ -2,7 +2,7 @@ import { WebSocket, WebSocketServer, ServerOptions } from "ws";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "node:crypto";
 import { JWT_ALGORITHM, JWT_SECRET } from "@repo/backend-common";
-import { prismaClient } from "@repo/db";
+import { prismaClient, canAccessRoom } from "@repo/db";
 
 /** Close code sent when the token is missing, invalid or expired. */
 export const CLOSE_UNAUTHORIZED = 4001;
@@ -128,6 +128,10 @@ export function createWsServer(options: ServerOptions) {
                 const room = await prismaClient.room.findUnique({ where: { slug: roomId } });
                 if (!room) {
                     send(conn, { type: "error", code: "room_not_found", roomId, message: "Room not found" });
+                    return;
+                }
+                if (!await canAccessRoom(room, conn.userId)) {
+                    send(conn, { type: "error", code: "forbidden", roomId, message: "This room is private" });
                     return;
                 }
                 if (!conn.userName) {

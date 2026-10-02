@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CreateUserSchema, SigninSchema, CreateRoomSchema } from './types';
+import { CreateUserSchema, SigninSchema, CreateRoomSchema, InviteMemberSchema, UpdateRoomSchema } from './types';
 
 describe('CreateUserSchema', () => {
   it('should validate correct input', () => {
@@ -91,5 +91,18 @@ describe('CreateRoomSchema', () => {
     for (const name of ['my room', 'a/b', '../x', 'ünïcode']) {
       expect(CreateRoomSchema.safeParse({ name }).success).toBe(false);
     }
+  });
+});
+describe('private rooms', () => {
+  it('rooms are public unless asked otherwise', () => {
+    const result = CreateRoomSchema.parse({ name: 'my-room' });
+    expect(result.isPrivate).toBe(false);
+    expect(CreateRoomSchema.parse({ name: 'my-room', isPrivate: true }).isPrivate).toBe(true);
+  });
+
+  it('validates privacy updates and invites', () => {
+    expect(UpdateRoomSchema.safeParse({ isPrivate: 'yes' }).success).toBe(false);
+    expect(InviteMemberSchema.safeParse({ username: ' bob@example.com ' }).data?.username).toBe('bob@example.com');
+    expect(InviteMemberSchema.safeParse({}).success).toBe(false);
   });
 });

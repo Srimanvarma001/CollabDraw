@@ -31,3 +31,8 @@ export function middleware(req: Request, res: Response, next: NextFunction) {
     next();
 }
 
+/** Like `middleware`, but lets anonymous requests through without a userId. */
+export function optionalAuth(req: Request, _res: Response, next: NextFunction) {
+    req.userId = getUserId(req) ?? undefined;
+    next();
+}

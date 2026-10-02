@@ -4,9 +4,9 @@ import cors from "cors";
 import bcrypt from "bcrypt";
 import rateLimit from "express-rate-limit";
 import { JWT_ALGORITHM, JWT_EXPIRES_IN, JWT_SECRET } from '@repo/backend-common';
-import { middleware } from "./middleware.js";
-import { CreateUserSchema, SigninSchema, CreateRoomSchema } from "@repo/common/types";
-import { prismaClient, Prisma } from "@repo/db";
+import { middleware, optionalAuth } from "./middleware.js";
+import { CreateUserSchema, SigninSchema, CreateRoomSchema, UpdateRoomSchema, InviteMemberSchema } from "@repo/common/types";
+import { prismaClient, Prisma, canAccessRoom, visibleRoomsWhere } from "@repo/db";
 
 
 function invalidInput(res: Response, error: { flatten(): { fieldErrors: unknown } }) {
@@ -125,6 +125,7 @@ export function createApp({
             const room = await prismaClient.room.create({
                 data: {
                     slug: parsedData.data.name,
+                    isPrivate: parsedData.data.isPrivate,
                     adminId: req.userId!
                 }
             })
@@ -132,7 +133,8 @@ export function createApp({
             res.status(201).json({
                 room: {
                     id: room.id,
-                    slug: room.slug
+                    slug: room.slug,
+                    isPrivate: room.isPrivate
                 }
             })
         } catch (e) {
@@ -146,8 +148,18 @@ export function createApp({
         }
     })
 
-    app.get("/chats/:roomId", async (req, res) => {
+    app.get("/chats/:roomId", middleware, async (req, res) => {
         const roomId = req.params.roomId;
+        const room = await prismaClient.room.findUnique({ where: { slug: roomId } });
+        if (!room) {
+            res.status(404).json({ message: "Room not found" });
+            return;
+        }
+        if (!await canAccessRoom(room, req.userId)) {
+            res.status(403).json({ message: "This room is private" });
+            return;
+        }
+
         // Clients rebuild the canvas by replaying every op in order, so this
         // must be the full history, oldest first.
         const messages = await prismaClient.chat.findMany({
@@ -164,9 +176,9 @@ export function createApp({
         })
     })
 
-    app.get("/room/:slug", async (req, res) => {
+    app.get("/room/:slug", optionalAuth, async (req, res) => {
         const slug = req.params.slug;
-        const room = await prismaClient.room.findFirst({
+        const room = await prismaClient.room.findUnique({
             where: {
                 slug
             }
@@ -176,47 +188,138 @@ export function createApp({
             res.status(404).json({ message: "Room not found" });
             return;
         }
+        if (!await canAccessRoom(room, req.userId)) {
+            res.status(403).json({ message: "This room is private" });
+            return;
+        }
 
         res.json({
             room
         })
     });
 
-    app.get("/rooms", async (req, res) => {
+    app.get("/rooms", optionalAuth, async (req, res) => {
         const rooms = await prismaClient.room.findMany({
+            where: visibleRoomsWhere(req.userId),
             orderBy: { createdAt: "desc" },
             include: { admin: { select: { name: true } } }
         });
         res.json({ rooms });
     });
 
-    app.delete("/room/:id", middleware, async (req, res) => {
+    /** Loads a room by numeric id for an admin-only route; responds and returns null otherwise. */
+    async function findAdminRoom(req: Request, res: Response) {
         const roomId = Number(req.params.id);
         if (!Number.isInteger(roomId)) {
             res.status(400).json({ message: "Invalid room id" });
-            return;
+            return null;
         }
 
-        const room = await prismaClient.room.findFirst({
+        const room = await prismaClient.room.findUnique({
             where: { id: roomId }
         });
 
         if (!room) {
             res.status(404).json({ message: "Room not found" });
-            return;
+            return null;
         }
 
         if (room.adminId !== req.userId) {
-            res.status(403).json({ message: "Only the room admin can delete this room" });
+            res.status(403).json({ message: "Only the room admin can do this" });
+            return null;
+        }
+        return room;
+    }
+
+    app.patch("/room/:id", middleware, async (req, res) => {
+        const parsedData = UpdateRoomSchema.safeParse(req.body);
+        if (!parsedData.success) {
+            invalidInput(res, parsedData.error);
             return;
         }
+        const room = await findAdminRoom(req, res);
+        if (!room) return;
 
+        const updated = await prismaClient.room.update({
+            where: { id: room.id },
+            data: { isPrivate: parsedData.data.isPrivate }
+        });
+        res.json({ room: { id: updated.id, slug: updated.slug, isPrivate: updated.isPrivate } });
+    });
+
+    app.delete("/room/:id", middleware, async (req, res) => {
+        const room = await findAdminRoom(req, res);
+        if (!room) return;
+
+        // Members are removed by the database (ON DELETE CASCADE).
         await prismaClient.$transaction([
             prismaClient.chat.deleteMany({ where: { roomId: room.slug } }),
-            prismaClient.room.delete({ where: { id: roomId } }),
+            prismaClient.room.delete({ where: { id: room.id } }),
         ]);
 
         res.json({ message: "Room deleted successfully" });
+    });
+
+    app.get("/room/:id/members", middleware, async (req, res) => {
+        const room = await findAdminRoom(req, res);
+        if (!room) return;
+
+        const members = await prismaClient.roomMember.findMany({
+            where: { roomId: room.id },
+            orderBy: { createdAt: "asc" },
+            include: { user: { select: { id: true, name: true, email: true } } }
+        });
+        res.json({
+            members: members.map(m => ({ userId: m.user.id, name: m.user.name, username: m.user.email }))
+        });
+    });
+
+    app.post("/room/:id/members", middleware, async (req, res) => {
+        const parsedData = InviteMemberSchema.safeParse(req.body);
+        if (!parsedData.success) {
+            invalidInput(res, parsedData.error);
+            return;
+        }
+        const room = await findAdminRoom(req, res);
+        if (!room) return;
+
+        const user = await prismaClient.user.findUnique({
+            where: { email: parsedData.data.username },
+            select: { id: true, name: true, email: true }
+        });
+        if (!user) {
+            res.status(404).json({ message: "No user with that email" });
+            return;
+        }
+        if (user.id === room.adminId) {
+            res.status(400).json({ message: "You already own this room" });
+            return;
+        }
+
+        try {
+            await prismaClient.roomMember.create({ data: { roomId: room.id, userId: user.id } });
+        } catch (e) {
+            if (isUniqueViolation(e)) {
+                res.status(409).json({ message: "Already a member" });
+                return;
+            }
+            throw e;
+        }
+        res.status(201).json({ member: { userId: user.id, name: user.name, username: user.email } });
+    });
+
+    app.delete("/room/:id/members/:userId", middleware, async (req, res) => {
+        const room = await findAdminRoom(req, res);
+        if (!room) return;
+
+        const { count } = await prismaClient.roomMember.deleteMany({
+            where: { roomId: room.id, userId: req.params.userId }
+        });
+        if (count === 0) {
+            res.status(404).json({ message: "Not a member" });
+            return;
+        }
+        res.json({ message: "Member removed" });
     });
 
     // Express 5 forwards rejected promises from async handlers here.
