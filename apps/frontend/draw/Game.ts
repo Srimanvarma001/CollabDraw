@@ -39,6 +39,7 @@ export class Game {
     // Until the room history has loaded, ops are queued and replayed on top of it.
     private loaded = false;
     private pendingOps: DrawOp[] = [];
+    private loadId = 0;
     private erasedThisStroke: Shape[] = [];
     private roomId: string;
     private clicked: boolean;
@@ -49,7 +50,6 @@ export class Game {
     public strokeWidth: number = 2;
     private currentPath: { x: number; y: number }[] = [];
     private cursors: Map<string, Cursor> = new Map();
-    private users: UserPresence[] = [];
     private lastCursorSent = 0;
     private cursorUpdateInterval = 50;
     private lastZoomTime = 0;
@@ -61,6 +61,8 @@ export class Game {
     private spacePressed: boolean = false;
 
     socket: WebSocket;
+    // Ops made while disconnected; sent once a new socket is attached.
+    private outbox: DrawOp[] = [];
 
     constructor(canvas: HTMLCanvasElement, roomId: string, socket: WebSocket) {
         this.canvas = canvas;
@@ -70,7 +72,7 @@ export class Game {
         this.socket = socket;
         this.clicked = false;
         this.init();
-        this.initHandlers();
+        this.socket.addEventListener("message", this.messageHandler);
         this.initMouseHandlers();
         this.initKeyboardHandlers();
         this.initResizeHandler();
@@ -87,6 +89,7 @@ export class Game {
     }
 
     destroy() {
+        this.socket.removeEventListener("message", this.messageHandler);
         this.canvas.removeEventListener("mousedown", this.mouseDownHandler);
         this.canvas.removeEventListener("mouseup", this.mouseUpHandler);
         this.canvas.removeEventListener("mousemove", this.mouseMoveHandler);
@@ -209,7 +212,10 @@ export class Game {
     }
 
     private sendOp(op: DrawOp) {
-        if (this.socket.readyState !== WebSocket.OPEN) return;
+        if (this.socket.readyState !== WebSocket.OPEN) {
+            this.outbox.push(op);
+            return;
+        }
         this.socket.send(JSON.stringify({
             type: "chat",
             message: JSON.stringify(op),
@@ -217,8 +223,13 @@ export class Game {
         }));
     }
 
-    getUsers(): UserPresence[] {
-        return this.users;
+    /** Updates who is in the room and drops the cursors of people who left. */
+    setUsers(users: UserPresence[]) {
+        const present = new Set(users.map(u => u.userId));
+        for (const id of this.cursors.keys()) {
+            if (!present.has(id)) this.cursors.delete(id);
+        }
+        this.redrawCanvas();
     }
 
     private screenToWorld(screenX: number, screenY: number) {
@@ -359,9 +370,36 @@ export class Game {
         this.ctx.stroke();
     }
 
+    /**
+     * Switches to a new (already joined) socket after a reconnect: sends
+     * whatever was drawn while offline, then reloads the room to pick up
+     * what others drew in the meantime. Local undo history is kept.
+     */
+    setSocket(socket: WebSocket) {
+        if (socket === this.socket) return;
+        this.socket.removeEventListener("message", this.messageHandler);
+        this.socket = socket;
+        this.socket.addEventListener("message", this.messageHandler);
+
+        const unsent = this.outbox;
+        this.outbox = [];
+        this.loaded = false;
+        // Unsent ops may not be stored yet when the history is fetched,
+        // so make sure they are reapplied on top of it.
+        this.pendingOps = [...unsent];
+        for (const op of unsent) {
+            this.sendOp(op);
+        }
+        this.init();
+    }
+
     async init() {
+        // A reconnect can start a new load while an older one is in flight;
+        // only the newest load may apply its result.
+        const loadId = ++this.loadId;
         try {
             const state = await getRoomState(this.roomId);
+            if (loadId !== this.loadId) return;
             let shapes = state.shapes;
             // Ops that arrived (or were made locally) while loading may or may
             // not be in the loaded history; ops are idempotent, so reapply them.
@@ -370,6 +408,7 @@ export class Game {
             }
             this.existingShapes = shapes;
         } catch (e) {
+            if (loadId !== this.loadId) return;
             console.error("Failed to load room history", e);
         }
         this.pendingOps = [];
@@ -377,38 +416,28 @@ export class Game {
         this.redrawCanvas();
     }
 
-    initHandlers() {
-        this.socket.onmessage = (event) => {
-            let message;
-            try {
-                message = JSON.parse(event.data);
-            } catch {
-                return;
-            }
+    private messageHandler = (event: MessageEvent) => {
+        let message;
+        try {
+            message = JSON.parse(event.data);
+        } catch {
+            return;
+        }
 
-            if (message.type === "chat" && typeof message.message === "string") {
-                for (const msg of parseRoomMessage(message.message, newShapeId())) {
-                    if (msg.op === "chat") continue;
-                    this.applyOp(msg);
-                }
-                this.redrawCanvas();
-            } else if (message.type === "cursor") {
-                this.cursors.set(message.userId, {
-                    x: message.cursor.x,
-                    y: message.cursor.y,
-                    userName: message.userName,
-                    userId: message.userId
-                });
-                this.redrawCanvas();
-            } else if (message.type === "presence") {
-                this.users = message.users || [];
-                // Drop cursors of people who left.
-                const present = new Set(this.users.map(u => u.userId));
-                for (const id of this.cursors.keys()) {
-                    if (!present.has(id)) this.cursors.delete(id);
-                }
-                this.redrawCanvas();
+        if (message.type === "chat" && typeof message.message === "string") {
+            for (const msg of parseRoomMessage(message.message, newShapeId())) {
+                if (msg.op === "chat") continue;
+                this.applyOp(msg);
             }
+            this.redrawCanvas();
+        } else if (message.type === "cursor") {
+            this.cursors.set(message.userId, {
+                x: message.cursor.x,
+                y: message.cursor.y,
+                userName: message.userName,
+                userId: message.userId
+            });
+            this.redrawCanvas();
         }
     }
 

@@ -22,10 +22,12 @@ const COLORS = [
 
 export function Canvas({
     roomId,
-    socket
+    socket,
+    users
 }: {
     socket: WebSocket;
     roomId: string;
+    users: UserPresence[];
 }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [game, setGame] = useState<Game>();
@@ -34,7 +36,6 @@ export function Canvas({
     const [strokeWidth, setStrokeWidth] = useState(2);
     const [canUndo, setCanUndo] = useState(false);
     const [canRedo, setCanRedo] = useState(false);
-    const [users, setUsers] = useState<UserPresence[]>([]);
     const [zoom, setZoom] = useState(1);
     const [showRoomModal, setShowRoomModal] = useState(false);
     const [roomModalMode, setRoomModalMode] = useState<"select" | "create" | "join" | "created">("select");
@@ -134,7 +135,6 @@ export function Canvas({
         const interval = setInterval(() => {
             setCanUndo(game?.canUndo() ?? false);
             setCanRedo(game?.canRedo() ?? false);
-            setUsers(game?.getUsers() ?? []);
             setZoom(game?.getZoom() ?? 1);
         }, 100);
         return () => clearInterval(interval);
@@ -152,8 +152,17 @@ export function Canvas({
                 g.destroy();
             }
         }
+        // The game outlives reconnects; a new socket is handed over below.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [canvasRef, roomId, socket]);
+    }, [canvasRef, roomId]);
+
+    useEffect(() => {
+        game?.setSocket(socket);
+    }, [game, socket]);
+
+    useEffect(() => {
+        game?.setUsers(users);
+    }, [game, users]);
 
     const handleZoomIn = () => {
         const centerX = window.innerWidth / 2;
