@@ -121,15 +121,15 @@ app.post("/room", middleware, async (req, res) => {
 app.get("/chats/:roomId", async (req, res) => {
     try {
         const roomId = req.params.roomId;
-        console.log(req.params.roomId);
+        // Clients rebuild the canvas by replaying every op in order, so this
+        // must be the full history, oldest first.
         const messages = await prismaClient.chat.findMany({
             where: {
                 roomId: roomId
             },
             orderBy: {
-                id: "desc"
-            },
-            take: 1000
+                id: "asc"
+            }
         });
 
         res.json({

@@ -1,14 +1,8 @@
 import { HTTP_BACKEND } from "@/config";
 import axios from "axios";
+import { replayRoom, RoomState } from "./shapes";
 
-export async function getExistingShapes(roomId: string) {
-    const res = await axios.get(`${HTTP_BACKEND}/chats/${roomId}`);
-    const messages = res.data.messages;
-
-    const shapes = messages.map((x: {message: string}) => {
-        const messageData = JSON.parse(x.message)
-        return messageData.shape;
-    })
-
-    return shapes;
+export async function getRoomState(roomId: string): Promise<RoomState> {
+    const res = await axios.get(`${HTTP_BACKEND}/chats/${encodeURIComponent(roomId)}`);
+    return replayRoom(res.data.messages ?? []);
 }

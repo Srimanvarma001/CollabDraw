@@ -1,50 +1,15 @@
 import { Tool } from "@/components/Canvas";
-import { getExistingShapes } from "./http";
+import { getRoomState } from "./http";
+import { DrawOp, Shape, ShapeWithoutId, applyOp, newShapeId, parseRoomMessage } from "./shapes";
+import { isPointNearShape } from "./geometry";
 
-export type Shape = {
-    type: "rect";
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    strokeColor: string;
-    strokeWidth: number;
-} | {
-    type: "circle";
-    centerX: number;
-    centerY: number;
-    radius: number;
-    strokeColor: string;
-    strokeWidth: number;
-} | {
-    type: "pencil";
-    points: { x: number; y: number }[];
-    strokeColor: string;
-    strokeWidth: number;
-} | {
-    type: "line";
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
-    strokeColor: string;
-    strokeWidth: number;
-} | {
-    type: "arrow";
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
-    strokeColor: string;
-    strokeWidth: number;
-} | {
-    type: "text";
-    x: number;
-    y: number;
-    text: string;
-    fontSize: number;
-    strokeColor: string;
-};
+export type { Shape } from "./shapes";
+
+/** One undoable user action, expressed as the ops that undo and redo it. */
+interface HistoryEntry {
+    undo: DrawOp[];
+    redo: DrawOp[];
+}
 
 interface Cursor {
     x: number;
@@ -69,8 +34,12 @@ export class Game {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
     private existingShapes: Shape[]
-    private history: Shape[][] = [];
-    private historyIndex = -1;
+    private undoStack: HistoryEntry[] = [];
+    private redoStack: HistoryEntry[] = [];
+    // Until the room history has loaded, ops are queued and replayed on top of it.
+    private loaded = false;
+    private pendingOps: DrawOp[] = [];
+    private erasedThisStroke: Shape[] = [];
     private roomId: string;
     private clicked: boolean;
     private startX = 0;
@@ -83,7 +52,6 @@ export class Game {
     private users: UserPresence[] = [];
     private lastCursorSent = 0;
     private cursorUpdateInterval = 50;
-    private erasing: boolean = false;
     private lastZoomTime = 0;
     private zoomThrottleMs = 16;
 
@@ -128,7 +96,7 @@ export class Game {
         window.removeEventListener("resize", this.resizeHandler);
     }
 
-    setTool(tool: "circle" | "pencil" | "rect" | "line" | "arrow" | "eraser" | "text") {
+    setTool(tool: Tool) {
         this.selectedTool = tool;
     }
 
@@ -140,19 +108,19 @@ export class Game {
         this.strokeWidth = width;
     }
 
-    addText(x: number, y: number, text: string, color: string, fontSize: number) {
-        const textShape: Shape = {
+    /** Places text at a screen position; `fontSize` is in screen pixels. */
+    addText(screenX: number, screenY: number, text: string, color: string, fontSize: number) {
+        const world = this.screenToWorld(screenX, screenY);
+        const worldFontSize = fontSize / this.camera.zoom;
+        this.addShape({
             type: "text",
-            x,
-            y,
+            // The input box's top-left is at the click; canvas text is drawn from its baseline.
+            x: world.x,
+            y: world.y + worldFontSize,
             text,
-            fontSize,
+            fontSize: worldFontSize,
             strokeColor: color
-        };
-        this.existingShapes.push(textShape);
-        this.saveToHistory();
-        this.redrawCanvas();
-        this.broadcastShapes();
+        });
     }
 
     getZoom(): number {
@@ -186,29 +154,67 @@ export class Game {
     }
 
     undo() {
-        if (this.historyIndex >= 0) {
-            this.historyIndex--;
-            this.existingShapes = this.historyIndex >= 0 
-                ? [...this.history[this.historyIndex]] 
-                : [];
-            this.redrawCanvas();
-        }
+        const entry = this.undoStack.pop();
+        if (!entry) return;
+        this.applyLocal(entry.undo);
+        this.redoStack.push(entry);
     }
 
     redo() {
-        if (this.historyIndex < this.history.length - 1) {
-            this.historyIndex++;
-            this.existingShapes = [...this.history[this.historyIndex]];
-            this.redrawCanvas();
-        }
+        const entry = this.redoStack.pop();
+        if (!entry) return;
+        this.applyLocal(entry.redo);
+        this.undoStack.push(entry);
     }
 
     canUndo(): boolean {
-        return this.historyIndex >= 0;
+        return this.undoStack.length > 0;
     }
 
     canRedo(): boolean {
-        return this.historyIndex < this.history.length - 1;
+        return this.redoStack.length > 0;
+    }
+
+    /** Applies ops locally and sends them to the room. */
+    private applyLocal(ops: DrawOp[]) {
+        for (const op of ops) {
+            this.applyOp(op);
+            this.sendOp(op);
+        }
+        this.redrawCanvas();
+    }
+
+    private applyOp(op: DrawOp) {
+        if (!this.loaded) {
+            this.pendingOps.push(op);
+        }
+        this.existingShapes = applyOp(this.existingShapes, op);
+    }
+
+    /** Applies and sends `redo`, and records the action so it can be undone. */
+    private perform(redo: DrawOp[], undo: DrawOp[]) {
+        this.applyLocal(redo);
+        this.record(redo, undo);
+    }
+
+    /** Records an action whose ops were already applied and sent. */
+    private record(redo: DrawOp[], undo: DrawOp[]) {
+        this.undoStack.push({ undo, redo });
+        this.redoStack = [];
+    }
+
+    private addShape(shape: ShapeWithoutId) {
+        const withId = { ...shape, id: newShapeId() } as Shape;
+        this.perform([{ op: "add", shape: withId }], [{ op: "delete", ids: [withId.id] }]);
+    }
+
+    private sendOp(op: DrawOp) {
+        if (this.socket.readyState !== WebSocket.OPEN) return;
+        this.socket.send(JSON.stringify({
+            type: "chat",
+            message: JSON.stringify(op),
+            roomId: this.roomId
+        }));
     }
 
     getUsers(): UserPresence[] {
@@ -298,12 +304,6 @@ export class Game {
         });
     }
 
-    private saveToHistory() {
-        this.history = this.history.slice(0, this.historyIndex + 1);
-        this.history.push([...this.existingShapes]);
-        this.historyIndex++;
-    }
-
     private drawShape(shape: Shape) {
         this.ctx.strokeStyle = shape.strokeColor;
         if (shape.type !== "text") {
@@ -360,29 +360,38 @@ export class Game {
     }
 
     async init() {
-        this.existingShapes = (await getExistingShapes(this.roomId)).filter(Boolean);
-        this.history = [[...this.existingShapes]];
-        this.historyIndex = 0;
+        try {
+            const state = await getRoomState(this.roomId);
+            let shapes = state.shapes;
+            // Ops that arrived (or were made locally) while loading may or may
+            // not be in the loaded history; ops are idempotent, so reapply them.
+            for (const op of this.pendingOps) {
+                shapes = applyOp(shapes, op);
+            }
+            this.existingShapes = shapes;
+        } catch (e) {
+            console.error("Failed to load room history", e);
+        }
+        this.pendingOps = [];
+        this.loaded = true;
         this.redrawCanvas();
     }
 
     initHandlers() {
         this.socket.onmessage = (event) => {
-            const message = JSON.parse(event.data);
+            let message;
+            try {
+                message = JSON.parse(event.data);
+            } catch {
+                return;
+            }
 
-            if (message.type == "chat") {
-                const parsedMessage = JSON.parse(message.message);
-                if (parsedMessage.shapes) {
-                    this.existingShapes = parsedMessage.shapes.filter(Boolean);
-                    this.saveToHistory();
-                    this.redrawCanvas();
-                } else if (parsedMessage.shape) {
-                    if (parsedMessage.shape && parsedMessage.shape.type) {
-                        this.existingShapes.push(parsedMessage.shape);
-                        this.saveToHistory();
-                        this.redrawCanvas();
-                    }
+            if (message.type === "chat" && typeof message.message === "string") {
+                for (const msg of parseRoomMessage(message.message, newShapeId())) {
+                    if (msg.op === "chat") continue;
+                    this.applyOp(msg);
                 }
+                this.redrawCanvas();
             } else if (message.type === "cursor") {
                 this.cursors.set(message.userId, {
                     x: message.cursor.x,
@@ -393,6 +402,11 @@ export class Game {
                 this.redrawCanvas();
             } else if (message.type === "presence") {
                 this.users = message.users || [];
+                // Drop cursors of people who left.
+                const present = new Set(this.users.map(u => u.userId));
+                for (const id of this.cursors.keys()) {
+                    if (!present.has(id)) this.cursors.delete(id);
+                }
                 this.redrawCanvas();
             }
         }
@@ -422,7 +436,14 @@ export class Game {
         this.redrawCanvas();
     }
 
+    private isTypingTarget(target: EventTarget | null): boolean {
+        if (!(target instanceof HTMLElement)) return false;
+        return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+    }
+
     keyDownHandler = (e: KeyboardEvent) => {
+        if (this.isTypingTarget(e.target)) return;
+
         if (e.code === "Space" && !this.spacePressed) {
             this.spacePressed = true;
             this.canvas.style.cursor = "grab";
@@ -438,6 +459,13 @@ export class Game {
             } else if (e.key === "0") {
                 e.preventDefault();
                 this.resetView();
+            } else if (e.key.toLowerCase() === "z") {
+                e.preventDefault();
+                if (e.shiftKey) this.redo();
+                else this.undo();
+            } else if (e.key.toLowerCase() === "y") {
+                e.preventDefault();
+                this.redo();
             }
         }
     }
@@ -494,72 +522,12 @@ export class Game {
 
     private handleEraser(x: number, y: number) {
         const threshold = 20 / this.camera.zoom;
-        const beforeCount = this.existingShapes.length;
+        const hit = this.existingShapes.filter(shape => isPointNearShape(x, y, shape, threshold));
+        if (hit.length === 0) return;
 
-        this.existingShapes = this.existingShapes.filter(shape => {
-            if (!shape) return true;
-            if (this.isPointNearShape(x, y, shape, threshold)) {
-                return false;
-            }
-            return true;
-        });
-
-        if (this.existingShapes.length !== beforeCount) {
-            this.erasing = true;
-            this.redrawCanvas();
-            this.broadcastShapes();
-        }
-    }
-
-    private broadcastShapes() {
-        this.socket.send(JSON.stringify({
-            type: "chat",
-            message: JSON.stringify({ shapes: this.existingShapes }),
-            roomId: this.roomId
-        }));
-    }
-
-    private isPointNearShape(x: number, y: number, shape: Shape, threshold: number): boolean {
-        if (!shape || !shape.type) return false;
-        
-        if (shape.type === "rect") {
-            return x >= shape.x - threshold && x <= shape.x + shape.width + threshold &&
-                   y >= shape.y - threshold && y <= shape.y + shape.height + threshold;
-        } else if (shape.type === "circle") {
-            const dist = Math.sqrt((x - shape.centerX) ** 2 + (y - shape.centerY) ** 2);
-            return Math.abs(dist - shape.radius) <= threshold;
-        } else if (shape.type === "line" || shape.type === "arrow") {
-            const dist = this.pointToLineDistance(x, y, shape.startX, shape.startY, shape.endX, shape.endY);
-            return dist <= threshold;
-        } else if (shape.type === "pencil") {
-            for (let i = 0; i < shape.points.length - 1; i++) {
-                const dist = this.pointToLineDistance(x, y, shape.points[i].x, shape.points[i].y, 
-                    shape.points[i + 1].x, shape.points[i + 1].y);
-                if (dist <= threshold) return true;
-            }
-        } else if (shape.type === "text") {
-            const textWidth = shape.text.length * shape.fontSize * 0.6;
-            const textHeight = shape.fontSize;
-            return x >= shape.x - threshold && x <= shape.x + textWidth + threshold &&
-                   y >= shape.y - textHeight - threshold && y <= shape.y + threshold;
-        }
-        return false;
-    }
-
-    private pointToLineDistance(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
-        const A = px - x1;
-        const B = py - y1;
-        const C = x2 - x1;
-        const D = y2 - y1;
-        const dot = A * C + B * D;
-        const lenSq = C * C + D * D;
-        let param = -1;
-        if (lenSq !== 0) param = dot / lenSq;
-        let xx, yy;
-        if (param < 0) { xx = x1; yy = y1; }
-        else if (param > 1) { xx = x2; yy = y2; }
-        else { xx = x1 + param * C; yy = y1 + param * D; }
-        return Math.sqrt((px - xx) ** 2 + (py - yy) ** 2);
+        // Deletes go out live while dragging; the whole stroke is one undo step.
+        this.erasedThisStroke.push(...hit);
+        this.applyLocal([{ op: "delete", ids: hit.map(s => s.id) }]);
     }
 
     mouseUpHandler = (e: MouseEvent) => {
@@ -574,9 +542,13 @@ export class Game {
         }
 
         if (this.selectedTool === "eraser") {
-            if (this.erasing) {
-                this.saveToHistory();
-                this.erasing = false;
+            if (this.erasedThisStroke.length > 0) {
+                const erased = this.erasedThisStroke;
+                this.erasedThisStroke = [];
+                this.record(
+                    [{ op: "delete", ids: erased.map(s => s.id) }],
+                    erased.map(shape => ({ op: "add", shape }))
+                );
             }
             this.clicked = false;
             return;
@@ -584,19 +556,12 @@ export class Game {
 
         if (this.selectedTool === "pencil") {
             if (this.currentPath.length > 1) {
-                const shape: Shape = {
+                this.addShape({
                     type: "pencil",
                     points: [...this.currentPath],
                     strokeColor: this.strokeColor,
                     strokeWidth: this.strokeWidth
-                };
-                this.existingShapes.push(shape);
-                this.saveToHistory();
-                this.socket.send(JSON.stringify({
-                    type: "chat",
-                    message: JSON.stringify({ shape }),
-                    roomId: this.roomId
-                }));
+                });
             }
             this.currentPath = [];
             this.clicked = false;
@@ -610,7 +575,7 @@ export class Game {
         const height = worldEnd.y - this.startY;
 
         const selectedTool = this.selectedTool;
-        let shape: Shape | null = null;
+        let shape: ShapeWithoutId | null = null;
         
         if (selectedTool === "rect") {
             shape = {
@@ -658,16 +623,7 @@ export class Game {
             return;
         }
 
-        this.existingShapes.push(shape);
-        this.saveToHistory();
-
-        this.socket.send(JSON.stringify({
-            type: "chat",
-            message: JSON.stringify({
-                shape
-            }),
-            roomId: this.roomId
-        }))
+        this.addShape(shape);
     }
 
     mouseMoveHandler = (e: MouseEvent) => {
@@ -682,7 +638,7 @@ export class Game {
         const worldPos = this.screenToWorld(e.clientX, e.clientY);
 
         const now = Date.now();
-        if (now - this.lastCursorSent > this.cursorUpdateInterval) {
+        if (now - this.lastCursorSent > this.cursorUpdateInterval && this.socket.readyState === WebSocket.OPEN) {
             this.lastCursorSent = now;
             this.socket.send(JSON.stringify({
                 type: "cursor",

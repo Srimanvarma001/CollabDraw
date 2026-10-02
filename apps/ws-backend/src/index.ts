@@ -137,8 +137,9 @@ wss.on('connection', function connection(ws: WebSocket, request) {
                         }
                     })
 
+                    // The sender already applied this op locally.
                     users.forEach(user => {
-                        if (user.rooms.includes(roomId)) {
+                        if (user.ws !== ws && user.rooms.includes(roomId)) {
                             user.ws.send(JSON.stringify({
                                 type: "chat",
                                 message,
