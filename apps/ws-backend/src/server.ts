@@ -10,6 +10,7 @@ export const CLOSE_UNAUTHORIZED = 4001;
 const MAX_MESSAGE_BYTES = 1024 * 1024;
 const HEARTBEAT_MS = 30_000;
 const DRAW_OPS = new Set(["add", "update", "delete"]);
+export const MAX_CHAT_LENGTH = 1000;
 
 /** One open socket. A user with two tabs open has two connections. */
 interface Connection {
@@ -43,15 +44,43 @@ function checkUser(token: string): string | null {
     }
 }
 
-/** Accepts only well-formed drawing ops, so junk never reaches the database. */
-export function isValidDrawMessage(message: unknown): message is string {
-    if (typeof message !== "string" || message.length > MAX_MESSAGE_BYTES) return false;
+/**
+ * Checks a room message and returns what to store and broadcast, or null to
+ * drop it. Drawing ops are stored as sent. Chat messages are rebuilt by the
+ * server, so the sender's name and the timestamp can't be faked.
+ */
+export function normalizeRoomMessage(
+    message: unknown,
+    sender: { userId: string; userName?: string }
+): { message: string; isChat: boolean } | null {
+    if (typeof message !== "string" || message.length > MAX_MESSAGE_BYTES) return null;
+    let data;
     try {
-        const data = JSON.parse(message);
-        return typeof data === "object" && data !== null && DRAW_OPS.has(data.op);
+        data = JSON.parse(message);
     } catch {
-        return false;
+        return null;
     }
+    if (typeof data !== "object" || data === null) return null;
+
+    if (DRAW_OPS.has(data.op)) {
+        return { message, isChat: false };
+    }
+    if (data.op === "chat" && typeof data.text === "string") {
+        const text = data.text.trim().slice(0, MAX_CHAT_LENGTH);
+        if (!text) return null;
+        return {
+            isChat: true,
+            message: JSON.stringify({
+                op: "chat",
+                id: randomUUID(),
+                text,
+                userId: sender.userId,
+                userName: sender.userName ?? `User-${sender.userId.slice(0, 6)}`,
+                sentAt: new Date().toISOString()
+            })
+        };
+    }
+    return null;
 }
 
 export function createWsServer(options: ServerOptions) {
@@ -141,18 +170,20 @@ export function createWsServer(options: ServerOptions) {
                     send(conn, { type: "error", code: "not_in_room", roomId, message: "Join the room first" });
                     return;
                 }
-                if (!isValidDrawMessage(message)) return;
+                const normalized = normalizeRoomMessage(message, conn);
+                if (!normalized) return;
 
                 await prismaClient.chat.create({
                     data: {
                         roomId,
-                        message,
+                        message: normalized.message,
                         userId: conn.userId
                     }
                 });
 
-                // The sender already applied this op locally.
-                broadcast(roomId, { type: "chat", message, roomId }, conn);
+                // The sender already applied a drawing op locally, but needs
+                // its chat message back with the server's id and timestamp.
+                broadcast(roomId, { type: "chat", message: normalized.message, roomId }, normalized.isChat ? undefined : conn);
                 break;
             }
         }

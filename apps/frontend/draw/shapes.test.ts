@@ -79,10 +79,10 @@ describe("replayRoom", () => {
 
     it("collects chat messages separately from shapes", () => {
         const state = replayRoom([
-            row(1, { op: "chat", text: "hi", userId: "u1", userName: "Ann", sentAt: "2026-01-01T00:00:00.000Z" }),
+            row(1, { op: "chat", id: "m1", text: "hi", userId: "u1", userName: "Ann", sentAt: "2026-01-01T00:00:00.000Z" }),
             row(2, { op: "add", shape: rect("a") }),
         ]);
-        expect(state.chat).toEqual([{ text: "hi", userId: "u1", userName: "Ann", sentAt: "2026-01-01T00:00:00.000Z" }]);
+        expect(state.chat).toEqual([{ id: "m1", text: "hi", userId: "u1", userName: "Ann", sentAt: "2026-01-01T00:00:00.000Z" }]);
         expect(state.shapes).toHaveLength(1);
     });
 

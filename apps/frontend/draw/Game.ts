@@ -1,6 +1,6 @@
 import { Tool } from "@/components/Canvas";
 import { getRoomState } from "./http";
-import { DrawOp, Shape, ShapeWithoutId, applyOp, newShapeId, parseRoomMessage } from "./shapes";
+import { ChatEntry, DrawOp, Shape, ShapeWithoutId, applyOp, newShapeId, parseRoomMessage } from "./shapes";
 import { getBounds, hitTest, isPointNearShape, translateShape, unionBounds } from "./geometry";
 
 export type { Shape } from "./shapes";
@@ -64,6 +64,8 @@ export class Game {
     private spacePressed: boolean = false;
 
     socket: WebSocket;
+    /** Called with the chat history after each (re)load (`replace`), and with each new message. */
+    onChat?: (entries: ChatEntry[], replace: boolean) => void;
     // Ops made while disconnected; sent once a new socket is attached.
     private outbox: DrawOp[] = [];
 
@@ -320,6 +322,17 @@ export class Game {
         return new Promise((resolve) => out.toBlob(resolve, "image/png"));
     }
 
+    /** Sends a chat message; returns false if not connected right now. */
+    sendChat(text: string): boolean {
+        if (this.socket.readyState !== WebSocket.OPEN) return false;
+        this.socket.send(JSON.stringify({
+            type: "chat",
+            message: JSON.stringify({ op: "chat", text }),
+            roomId: this.roomId
+        }));
+        return true;
+    }
+
     /** Deletes the selected shape (undoable). */
     deleteSelected() {
         const shape = this.getSelectedShape();
@@ -469,6 +482,7 @@ export class Game {
                 shapes = applyOp(shapes, op);
             }
             this.existingShapes = shapes;
+            this.onChat?.(state.chat, true);
         } catch (e) {
             if (loadId !== this.loadId) return;
             console.error("Failed to load room history", e);
@@ -488,7 +502,11 @@ export class Game {
 
         if (message.type === "chat" && typeof message.message === "string") {
             for (const msg of parseRoomMessage(message.message, newShapeId())) {
-                if (msg.op === "chat") continue;
+                if (msg.op === "chat") {
+                    const { op: _op, ...entry } = msg;
+                    this.onChat?.([entry], false);
+                    continue;
+                }
                 this.applyOp(msg);
             }
             this.redrawCanvas();

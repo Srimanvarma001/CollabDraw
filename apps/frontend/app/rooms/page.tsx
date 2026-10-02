@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trash2, ArrowLeft, Layout } from "lucide-react";
 import { describeError } from "@/lib/errors";
+import { getCurrentUserId } from "@/lib/auth";
 
 interface Room {
     id: number;
@@ -91,16 +92,6 @@ export default function RoomsPage() {
             }
         } catch {
             alert("Something went wrong");
-        }
-    }
-
-    function getCurrentUserId(): string | null {
-        if (!token) return null;
-        try {
-            const payload = JSON.parse(atob(token.split(".")[1]));
-            return payload.userId;
-        } catch {
-            return null;
         }
     }
 

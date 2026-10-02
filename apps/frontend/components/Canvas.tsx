@@ -3,10 +3,20 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { IconButton } from "./IconButton";
-import { Circle, Pencil, RectangleHorizontalIcon, Undo2, Redo2, Minus, Users, ArrowUpRight, Eraser, ZoomIn, ZoomOut, Type, MousePointer2, Download } from "lucide-react";
+import { Circle, Pencil, RectangleHorizontalIcon, Undo2, Redo2, Minus, Users, ArrowUpRight, Eraser, ZoomIn, ZoomOut, Type, MousePointer2, Download, MessageSquare } from "lucide-react";
 import { Game, UserPresence } from "@/draw/Game";
 import { HTTP_BACKEND } from "@/config";
 import { describeError } from "@/lib/errors";
+import { getCurrentUserId } from "@/lib/auth";
+import { ChatEntry } from "@/draw/shapes";
+import { ChatPanel } from "./ChatPanel";
+
+/** Merges chat messages by id, oldest first. */
+function mergeChat(prev: ChatEntry[], incoming: ChatEntry[]): ChatEntry[] {
+    const byId = new Map(prev.map(m => [m.id, m]));
+    for (const m of incoming) byId.set(m.id, m);
+    return Array.from(byId.values()).sort((a, b) => a.sentAt.localeCompare(b.sentAt));
+}
 
 export type Tool = "select" | "circle" | "rect" | "pencil" | "line" | "arrow" | "eraser" | "text";
 
@@ -47,6 +57,16 @@ export function Canvas({
     const [creatingRoom, setCreatingRoom] = useState(false);
     const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
     const [textInput, setTextInput] = useState<{ x: number; y: number; text: string } | null>(null);
+    const [chat, setChat] = useState<ChatEntry[]>([]);
+    const [chatOpen, setChatOpen] = useState(false);
+    const [unread, setUnread] = useState(0);
+    const chatOpenRef = useRef(chatOpen);
+    chatOpenRef.current = chatOpen;
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+    useEffect(() => {
+        setCurrentUserId(getCurrentUserId());
+    }, []);
 
     const router = useRouter();
 
@@ -142,6 +162,14 @@ export function Canvas({
     useEffect(() => {
         if (canvasRef.current) {
             const g = new Game(canvasRef.current, roomId, socket);
+            g.onChat = (entries, replace) => {
+                // History only grows, so merging by id also keeps messages
+                // that arrived while it was being (re)loaded.
+                setChat(prev => mergeChat(prev, entries));
+                if (!replace && !chatOpenRef.current) {
+                    setUnread(n => n + entries.filter(e => e.userId !== getCurrentUserId()).length);
+                }
+            };
             g.setTool(selectedTool);
             g.setStrokeColor(strokeColor);
             g.setStrokeWidth(strokeWidth);
@@ -287,7 +315,21 @@ export function Canvas({
                 onResetZoom={handleResetZoom}
                 onOpenRoomModal={() => setShowRoomModal(true)}
                 onExport={handleExport}
+                chatOpen={chatOpen}
+                unread={unread}
+                onToggleChat={() => {
+                    setChatOpen(open => !open);
+                    setUnread(0);
+                }}
             />
+            {chatOpen && (
+                <ChatPanel
+                    messages={chat}
+                    currentUserId={currentUserId}
+                    onSend={(text) => game?.sendChat(text) ?? false}
+                    onClose={() => setChatOpen(false)}
+                />
+            )}
 
             {showRoomModal && (
                 <div 
@@ -601,7 +643,10 @@ function Topbar({
     onZoomOut,
     onResetZoom,
     onOpenRoomModal,
-    onExport
+    onExport,
+    chatOpen,
+    unread,
+    onToggleChat
 }: {
     selectedTool: Tool,
     setSelectedTool: (s: Tool) => void,
@@ -619,7 +664,10 @@ function Topbar({
     onZoomOut: () => void,
     onResetZoom: () => void,
     onOpenRoomModal: () => void,
-    onExport: () => void
+    onExport: () => void,
+    chatOpen: boolean,
+    unread: number,
+    onToggleChat: () => void
 }) {
     const [isMobile, setIsMobile] = useState(false);
     const [isTablet, setIsTablet] = useState(false);
@@ -910,6 +958,36 @@ function Topbar({
                 icon={<Download size={iconSize} />}
                 size={buttonSize}
             />
+            <div style={{ position: "relative", flexShrink: 0 }}>
+                <IconButton 
+                    onClick={onToggleChat}
+                    activated={chatOpen}
+                    title={unread > 0 ? `Chat (${unread} unread)` : "Chat"}
+                    icon={<MessageSquare size={iconSize} />}
+                    size={buttonSize}
+                />
+                {unread > 0 && (
+                    <span style={{
+                        position: "absolute",
+                        top: -4,
+                        right: -4,
+                        minWidth: 16,
+                        height: 16,
+                        padding: "0 4px",
+                        borderRadius: 8,
+                        background: "#ef4444",
+                        color: "#fff",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        pointerEvents: "none"
+                    }}>
+                        {unread > 99 ? "99+" : unread}
+                    </span>
+                )}
+            </div>
         </div>
     );
 }

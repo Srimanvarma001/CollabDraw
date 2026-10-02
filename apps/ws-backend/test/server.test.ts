@@ -13,7 +13,7 @@ const db = vi.hoisted(() => ({
 }));
 vi.mock("@repo/db", () => db);
 
-const { createWsServer, CLOSE_UNAUTHORIZED, isValidDrawMessage } = await import("../src/server.js");
+const { createWsServer, CLOSE_UNAUTHORIZED, normalizeRoomMessage, MAX_CHAT_LENGTH } = await import("../src/server.js");
 const prisma = db.prismaClient;
 
 let wss: WebSocketServer;
@@ -151,6 +151,19 @@ describe("ws-backend", () => {
         expect(lastPresence(watcher)).toEqual(["w"]);
     });
 
+    it("stores chat messages and echoes them to the sender too", async () => {
+        const a = await connect("a");
+        const b = await connect("b");
+        await a.join("chat-room");
+        await b.join("chat-room");
+        a.send({ type: "chat", roomId: "chat-room", message: JSON.stringify({ op: "chat", text: "hello" }) });
+        const mine = await a.waitFor((m) => m.type === "chat");
+        const theirs = await b.waitFor((m) => m.type === "chat");
+        expect(JSON.parse(mine.message)).toMatchObject({ text: "hello", userName: "Name of a" });
+        expect(theirs.message).toBe(mine.message);
+        expect(prisma.chat.create).toHaveBeenCalledTimes(1);
+    });
+
     it("relays cursors to others only", async () => {
         const a = await connect("a");
         const b = await connect("b");
@@ -178,10 +191,32 @@ describe("ws-backend", () => {
     });
 });
 
-describe("isValidDrawMessage", () => {
-    it("accepts known ops only", () => {
-        expect(isValidDrawMessage(JSON.stringify({ op: "update", shape: {} }))).toBe(true);
-        expect(isValidDrawMessage(JSON.stringify({ shape: {} }))).toBe(false);
-        expect(isValidDrawMessage(42)).toBe(false);
+describe("normalizeRoomMessage", () => {
+    const sender = { userId: "u1", userName: "Ann" };
+
+    it("passes drawing ops through unchanged", () => {
+        const message = JSON.stringify({ op: "update", shape: {} });
+        expect(normalizeRoomMessage(message, sender)).toEqual({ message, isChat: false });
+    });
+
+    it("rejects unknown ops and non-strings", () => {
+        expect(normalizeRoomMessage(JSON.stringify({ shape: {} }), sender)).toBeNull();
+        expect(normalizeRoomMessage(42, sender)).toBeNull();
+    });
+
+    it("rebuilds chat messages with the real sender and a timestamp", () => {
+        const forged = JSON.stringify({ op: "chat", text: "  hi  ", userId: "someone-else", userName: "Admin" });
+        const result = normalizeRoomMessage(forged, sender)!;
+        expect(result.isChat).toBe(true);
+        const data = JSON.parse(result.message);
+        expect(data).toMatchObject({ op: "chat", text: "hi", userId: "u1", userName: "Ann" });
+        expect(typeof data.id).toBe("string");
+        expect(Date.parse(data.sentAt)).not.toBeNaN();
+    });
+
+    it("drops empty chat messages and truncates long ones", () => {
+        expect(normalizeRoomMessage(JSON.stringify({ op: "chat", text: "   " }), sender)).toBeNull();
+        const long = normalizeRoomMessage(JSON.stringify({ op: "chat", text: "x".repeat(5000) }), sender)!;
+        expect(JSON.parse(long.message).text).toHaveLength(MAX_CHAT_LENGTH);
     });
 });

@@ -17,6 +17,7 @@ export type Shape =
 export type ShapeWithoutId = Shape extends infer S ? (S extends Shape ? Omit<S, "id"> : never) : never;
 
 export interface ChatEntry {
+    id: string;
     text: string;
     userId: string;
     userName: string;
@@ -108,6 +109,7 @@ export function parseRoomMessage(raw: string, fallbackId: string): RoomMessage[]
             if (typeof msg.text === "string") {
                 return [{
                     op: "chat",
+                    id: typeof msg.id === "string" ? msg.id : `chat-${fallbackId}`,
                     text: msg.text,
                     userId: typeof msg.userId === "string" ? msg.userId : "",
                     userName: typeof msg.userName === "string" ? msg.userName : "Unknown",
