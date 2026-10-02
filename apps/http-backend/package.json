@@ -7,12 +7,13 @@
     "build": "tsc -b",
     "start": "node ./dist/index.js",
     "dev": "npm run build && npm run start",
-    "test": "vitest"
+    "test": "vitest run",
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@repo/db": "workspace:*",
-    "@repo/backend-common": "workspace:*",  
+    "@repo/backend-common": "workspace:*",
     "@repo/common": "workspace:*",
+    "@repo/db": "workspace:*",
     "@types/bcrypt": "^5.0.2",
     "@types/cors": "^2.8.18",
     "@types/jsonwebtoken": "^9.0.9",
@@ -24,6 +25,8 @@
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
     "@types/express": "^5.0.2",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.0",
     "vitest": "^3.1.4"
   }
 }

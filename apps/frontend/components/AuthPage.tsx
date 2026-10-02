@@ -6,6 +6,16 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Pencil, Eye, EyeOff } from "lucide-react";
 
+const FIELD_LABELS: Record<string, string> = { username: "Email", password: "Password", name: "Name" };
+
+/** Turns a `{ message, errors: { field: [msg] } }` response into one readable line. */
+function describeError(data: { message?: string; errors?: Record<string, string[] | undefined> }): string | undefined {
+    const fieldErrors = Object.entries(data.errors ?? {})
+        .filter(([, msgs]) => msgs && msgs.length > 0)
+        .map(([field, msgs]) => `${FIELD_LABELS[field] ?? field}: ${msgs![0]}`);
+    return fieldErrors.length > 0 ? fieldErrors.join("\n") : data.message;
+}
+
 export function AuthPage({ isSignin, returnUrl }: {
     isSignin: boolean
     returnUrl?: string
@@ -35,14 +45,14 @@ export function AuthPage({ isSignin, returnUrl }: {
             if (res.ok) {
                 if (isSignin) {
                     localStorage.setItem("token", data.token);
-                    localStorage.setItem("userName", email.split("@")[0] || "User");
+                    localStorage.setItem("userName", data.name || email.split("@")[0] || "User");
                     router.push(returnUrl || "/rooms");
                 } else {
                     alert("Account created! Please sign in.");
                     router.push("/signin");
                 }
             } else {
-                alert(data.message || "Authentication failed");
+                alert(describeError(data) || "Authentication failed");
             }
         } catch {
             alert("Something went wrong");
