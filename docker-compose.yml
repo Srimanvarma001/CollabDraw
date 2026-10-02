@@ -1,0 +1,65 @@
+# Runs the whole app: Postgres, migrations, both backends and the frontend.
+#   cp .env.example .env   # then set JWT_SECRET
+#   docker compose up --build
+# Open http://localhost:3000
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql://postgres:postgres@db:5432/collabdraw
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (see .env.example)}
+  JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: collabdraw
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d collabdraw"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  migrate:
+    build: { context: ., target: migrate }
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/collabdraw
+    depends_on:
+      db: { condition: service_healthy }
+
+  http-backend:
+    build: { context: ., target: http-backend }
+    environment:
+      <<: *backend-env
+      PORT: 3001
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      AUTH_RATE_LIMIT: ${AUTH_RATE_LIMIT:-10}
+    ports: ["3001:3001"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  ws-backend:
+    build: { context: ., target: ws-backend }
+    environment:
+      <<: *backend-env
+      PORT: 8080
+    ports: ["8080:8080"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  frontend:
+    build:
+      context: .
+      target: frontend
+      args:
+        # The browser talks to the backends directly, so these are public URLs.
+        NEXT_PUBLIC_HTTP_BACKEND: ${NEXT_PUBLIC_HTTP_BACKEND:-http://localhost:3001}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8080}
+    ports: ["3000:3000"]
+    depends_on: [http-backend, ws-backend]
+
+volumes:
+  db-data:
