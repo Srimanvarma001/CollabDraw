@@ -1,7 +1,7 @@
 import { Tool } from "@/components/Canvas";
 import { getRoomState } from "./http";
 import { DrawOp, Shape, ShapeWithoutId, applyOp, newShapeId, parseRoomMessage } from "./shapes";
-import { isPointNearShape } from "./geometry";
+import { getBounds, hitTest, isPointNearShape, translateShape } from "./geometry";
 
 export type { Shape } from "./shapes";
 
@@ -41,6 +41,9 @@ export class Game {
     private pendingOps: DrawOp[] = [];
     private loadId = 0;
     private erasedThisStroke: Shape[] = [];
+    // Select tool: the selected shape, and the drag in progress if any.
+    private selectedId: string | null = null;
+    private drag: { startX: number; startY: number; original: Shape; moved: boolean } | null = null;
     private roomId: string;
     private clicked: boolean;
     private startX = 0;
@@ -101,6 +104,10 @@ export class Game {
 
     setTool(tool: Tool) {
         this.selectedTool = tool;
+        if (tool !== "select" && this.selectedId) {
+            this.selectedId = null;
+            this.redrawCanvas();
+        }
     }
 
     setStrokeColor(color: string) {
@@ -260,10 +267,37 @@ export class Game {
         this.existingShapes.filter(Boolean).forEach((shape) => {
             this.drawShape(shape);
         });
+        this.drawSelection();
 
         this.ctx.restore();
 
         this.drawCursors();
+    }
+
+    private getSelectedShape(): Shape | null {
+        if (!this.selectedId) return null;
+        return this.existingShapes.find(s => s.id === this.selectedId) ?? null;
+    }
+
+    private drawSelection() {
+        const shape = this.getSelectedShape();
+        if (!shape) return;
+        const b = getBounds(shape);
+        const pad = 6 / this.camera.zoom;
+        this.ctx.save();
+        this.ctx.strokeStyle = "#3b82f6";
+        this.ctx.lineWidth = 1 / this.camera.zoom;
+        this.ctx.setLineDash([4 / this.camera.zoom, 4 / this.camera.zoom]);
+        this.ctx.strokeRect(b.minX - pad, b.minY - pad, b.maxX - b.minX + pad * 2, b.maxY - b.minY + pad * 2);
+        this.ctx.restore();
+    }
+
+    /** Deletes the selected shape (undoable). */
+    deleteSelected() {
+        const shape = this.getSelectedShape();
+        if (!shape) return;
+        this.selectedId = null;
+        this.perform([{ op: "delete", ids: [shape.id] }], [{ op: "add", shape }]);
     }
 
     private drawGrid() {
@@ -473,6 +507,16 @@ export class Game {
     keyDownHandler = (e: KeyboardEvent) => {
         if (this.isTypingTarget(e.target)) return;
 
+        if ((e.key === "Delete" || e.key === "Backspace") && this.selectedId) {
+            e.preventDefault();
+            this.deleteSelected();
+            return;
+        }
+        if (e.key === "Escape" && this.selectedId) {
+            this.selectedId = null;
+            this.redrawCanvas();
+        }
+
         if (e.code === "Space" && !this.spacePressed) {
             this.spacePressed = true;
             this.canvas.style.cursor = "grab";
@@ -511,6 +555,7 @@ export class Game {
             case "pencil": return "crosshair";
             case "eraser": return "pointer";
             case "text": return "text";
+            case "select": return "default";
             default: return "crosshair";
         }
     }
@@ -529,6 +574,15 @@ export class Game {
         }
 
         if (this.selectedTool === "text") {
+            return;
+        }
+
+        if (this.selectedTool === "select") {
+            const worldPos = this.screenToWorld(e.clientX, e.clientY);
+            const hit = hitTest(this.existingShapes, worldPos.x, worldPos.y, 8 / this.camera.zoom);
+            this.selectedId = hit?.id ?? null;
+            this.drag = hit ? { startX: worldPos.x, startY: worldPos.y, original: hit, moved: false } : null;
+            this.redrawCanvas();
             return;
         }
 
@@ -567,6 +621,19 @@ export class Game {
         }
 
         if (this.selectedTool === "text") {
+            return;
+        }
+
+        if (this.selectedTool === "select") {
+            const drag = this.drag;
+            this.drag = null;
+            if (!drag) return;
+            const moved = this.getSelectedShape();
+            // Nothing to send if it was a plain click or someone deleted it mid-drag.
+            if (!moved || !drag.moved) return;
+            const update: DrawOp = { op: "update", shape: moved };
+            this.sendOp(update);
+            this.record([update], [{ op: "update", shape: drag.original }]);
             return;
         }
 
@@ -702,6 +769,23 @@ export class Game {
 
         if (this.selectedTool === "eraser" && this.clicked) {
             this.handleEraser(worldPos.x, worldPos.y);
+            return;
+        }
+
+        if (this.selectedTool === "select") {
+            if (this.drag) {
+                // Move locally while dragging; the update is sent once on mouseup.
+                const dx = worldPos.x - this.drag.startX;
+                const dy = worldPos.y - this.drag.startY;
+                if (dx === 0 && dy === 0) return;
+                this.drag.moved = true;
+                const moved = translateShape(this.drag.original, dx, dy);
+                this.existingShapes = applyOp(this.existingShapes, { op: "update", shape: moved });
+                this.redrawCanvas();
+            } else {
+                const hovering = hitTest(this.existingShapes, worldPos.x, worldPos.y, 8 / this.camera.zoom);
+                this.canvas.style.cursor = hovering ? "move" : "default";
+            }
             return;
         }
 

@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { IconButton } from "./IconButton";
-import { Circle, Pencil, RectangleHorizontalIcon, Undo2, Redo2, Minus, Users, ArrowUpRight, Eraser, ZoomIn, ZoomOut, Type } from "lucide-react";
+import { Circle, Pencil, RectangleHorizontalIcon, Undo2, Redo2, Minus, Users, ArrowUpRight, Eraser, ZoomIn, ZoomOut, Type, MousePointer2 } from "lucide-react";
 import { Game, UserPresence } from "@/draw/Game";
 import { HTTP_BACKEND } from "@/config";
 import { describeError } from "@/lib/errors";
 
-export type Tool = "circle" | "rect" | "pencil" | "line" | "arrow" | "eraser" | "text";
+export type Tool = "select" | "circle" | "rect" | "pencil" | "line" | "arrow" | "eraser" | "text";
 
 const COLORS = [
     "#ffffff",
@@ -647,44 +647,58 @@ function Topbar({
             WebkitOverflowScrolling: "touch"
         }}>
             <IconButton 
+                onClick={() => setSelectedTool("select")}
+                activated={selectedTool === "select"}
+                title="Select and move (Delete removes)"
+                icon={<MousePointer2 size={iconSize} />}
+                size={buttonSize}
+            />
+            <IconButton 
                 onClick={() => setSelectedTool("pencil")}
                 activated={selectedTool === "pencil"}
+                title="Pencil"
                 icon={<Pencil size={iconSize} />}
                 size={buttonSize}
             />
             <IconButton 
                 onClick={() => setSelectedTool("rect")}
                 activated={selectedTool === "rect"}
+                title="Rectangle"
                 icon={<RectangleHorizontalIcon size={iconSize} />}
                 size={buttonSize}
             />
             <IconButton 
                 onClick={() => setSelectedTool("circle")}
                 activated={selectedTool === "circle"}
+                title="Circle"
                 icon={<Circle size={iconSize} />}
                 size={buttonSize}
             />
             <IconButton 
                 onClick={() => setSelectedTool("line")}
                 activated={selectedTool === "line"}
+                title="Line"
                 icon={<Minus size={iconSize} />}
                 size={buttonSize}
             />
             <IconButton 
                 onClick={() => setSelectedTool("arrow")}
                 activated={selectedTool === "arrow"}
+                title="Arrow"
                 icon={<ArrowUpRight size={iconSize} />}
                 size={buttonSize}
             />
             <IconButton 
                 onClick={() => setSelectedTool("eraser")}
                 activated={selectedTool === "eraser"}
+                title="Eraser"
                 icon={<Eraser size={iconSize} />}
                 size={buttonSize}
             />
             <IconButton 
                 onClick={() => setSelectedTool("text")}
                 activated={selectedTool === "text"}
+                title="Text"
                 icon={<Type size={iconSize} />}
                 size={buttonSize}
             />
@@ -759,12 +773,14 @@ function Topbar({
             <IconButton 
                 onClick={onUndo}
                 disabled={!canUndo}
+                title="Undo (Ctrl+Z)"
                 icon={<Undo2 size={iconSize} />}
                 size={buttonSize}
             />
             <IconButton 
                 onClick={onRedo}
                 disabled={!canRedo}
+                title="Redo (Ctrl+Y)"
                 icon={<Redo2 size={iconSize} />}
                 size={buttonSize}
             />
@@ -800,7 +816,7 @@ function Topbar({
                                 justifyContent: "center",
                                 fontSize: isMobile ? "9px" : "11px",
                                 fontWeight: "600",
-                                color: "#fff",
+                                color: COLORS[i % COLORS.length] === "#ffffff" ? "#111" : "#fff",
                                 border: "2px solid var(--bg-surface)",
                                 marginLeft: i > 0 ? "-6px" : "0",
                                 cursor: "pointer"
@@ -823,7 +839,7 @@ function Topbar({
                             border: "2px solid var(--bg-surface)",
                             marginLeft: "-6px"
                         }}>
-                            {users.length - 3}+
+                            +{users.length - 5}
                         </div>
                     )}
                 </div>
@@ -839,6 +855,7 @@ function Topbar({
 
             <IconButton 
                 onClick={onZoomOut}
+                title="Zoom out"
                 icon={<ZoomOut size={iconSize} />}
                 size={buttonSize}
             />
@@ -857,6 +874,7 @@ function Topbar({
             </span>
             <IconButton 
                 onClick={onZoomIn}
+                title="Zoom in"
                 icon={<ZoomIn size={iconSize} />}
                 size={buttonSize}
             />

@@ -1,21 +1,30 @@
 import { ReactNode } from "react";
 
 export function IconButton({
-    icon, onClick, activated, disabled, size = 36
+    icon, onClick, activated, disabled, size = 36, title
 }: {
     icon: ReactNode,
     onClick: () => void,
     activated?: boolean,
     disabled?: boolean,
-    size?: number
+    size?: number,
+    /** Shown as a tooltip and read by screen readers. */
+    title: string
 }) {
     return (
-        <div 
-            onClick={disabled ? undefined : onClick}
+        <button
+            type="button"
+            title={title}
+            aria-label={title}
+            aria-pressed={activated}
+            disabled={disabled}
+            onClick={onClick}
             style={{
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                flexShrink: 0,
+                padding: 0,
                 width: `${size}px`,
                 height: `${size}px`,
                 borderRadius: "8px",
@@ -48,6 +57,6 @@ export function IconButton({
             }}
         >
             {icon}
-        </div>
+        </button>
     );
 }
