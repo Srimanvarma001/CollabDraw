@@ -1,0 +1,10 @@
+{
+  // Used by `pnpm check-types`. Skips .next/, which `next build` rewrites
+  // while running (and type-checks itself), so the two can run in parallel.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", ".next"]
+}

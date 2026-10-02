@@ -36,3 +36,9 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Prisma client output from older setups (it's generated into node_modules now)
+packages/db/generated
