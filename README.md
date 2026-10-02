@@ -1,84 +1,88 @@
-# Turborepo starter
+# CollabDraw
 
-This Turborepo starter is maintained by the Turborepo core team.
+A real-time collaborative whiteboard. Create a room, share the link, and draw together: everyone sees each other's shapes, cursors and messages live.
 
-## Using this example
+## Features
 
-Run the following command:
+- **Drawing tools**: pencil, rectangle, circle, line, arrow, text and eraser, with 9 colours and adjustable stroke width.
+- **Select and move**: click a shape to select it, drag to move it, press Delete to remove it.
+- **Real-time sync**: shapes, live cursors and who's in the room, over WebSockets.
+- **Shared undo/redo**: Ctrl+Z / Ctrl+Y undo *your* last change for everyone, and it's saved.
+- **Persistent rooms**: reload or come back later and the drawing is exactly as you left it.
+- **Chat**: a chat panel per room, with an unread badge.
+- **Export**: download the whole drawing as a PNG.
+- **Private rooms**: invite-only rooms; the owner invites people by email and can remove them.
+- **Infinite canvas**: pan (Space + drag or middle mouse) and zoom (wheel, Ctrl +/-, Ctrl 0 to reset).
+- **Reconnects automatically**: if the connection drops, keep drawing; changes sync when it's back.
+
+## Architecture
+
+```
+apps/
+  frontend/       Next.js app (port 3000): pages, canvas engine (draw/), UI
+  http-backend/   Express REST API (port 3001): auth, rooms, members, room history
+  ws-backend/     WebSocket server (port 8080): live drawing ops, cursors, presence, chat
+packages/
+  db/             Prisma schema, migrations, client and shared access rules
+  common/         Zod schemas shared by the API
+  backend-common/ Shared backend config (JWT secret/expiry, loaded from env)
+  typescript-config/
+```
+
+Each change to a canvas is a small **op** (`add`, `update` or `delete` a shape by id). The client applies it immediately and sends it over the WebSocket. The server stores it and forwards it to everyone else in the room. Loading a room replays its stored ops in order. Undo and redo are just more ops, so they sync and persist like everything else. See [CollabDraw.md](./CollabDraw.md) for the protocol, API and data model.
+
+## Getting started
+
+### With Docker (quickest)
 
 ```sh
-npx create-turbo@latest
+cp .env.example .env        # then set JWT_SECRET, e.g. `openssl rand -base64 48`
+docker compose up --build
 ```
 
-## What's inside?
+Open http://localhost:3000. This starts Postgres, applies migrations, and runs both backends and the frontend.
 
-This Turborepo includes the following packages/apps:
+### Locally
 
-### Apps and Packages
+Requirements: Node 18+ (22 recommended), pnpm 9, and PostgreSQL.
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-```
-cd my-turborepo
-pnpm build
+```sh
+pnpm install                # also generates the Prisma client
+cp .env.example .env        # set DATABASE_URL and JWT_SECRET
+pnpm db:migrate             # create/update the database tables
+pnpm dev                    # frontend :3000, HTTP API :3001, WebSocket :8080
 ```
 
-### Develop
+The backends read `.env` from the repo root. For the frontend, `NEXT_PUBLIC_HTTP_BACKEND` and `NEXT_PUBLIC_WS_URL` default to localhost; set them in `apps/frontend/.env.local` if your backends live elsewhere.
 
-To develop all apps and packages, run the following command:
+### Configuration
 
-```
-cd my-turborepo
-pnpm dev
-```
+All variables are documented in [.env.example](./.env.example). The important ones:
 
-### Remote Caching
+| Variable | Used by | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | backends, migrations | PostgreSQL connection string |
+| `JWT_SECRET` | backends | **Required.** Long random string; the servers refuse to start without it |
+| `JWT_EXPIRES_IN` | http-backend | Token lifetime, default `7d` |
+| `CORS_ORIGIN` | http-backend | Allowed frontend origin(s), comma-separated |
+| `AUTH_RATE_LIMIT` | http-backend | Sign-in/up attempts per IP per 15 min, default 10 |
+| `NEXT_PUBLIC_HTTP_BACKEND`, `NEXT_PUBLIC_WS_URL` | frontend | Public URLs of the backends, baked in at build time |
 
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+## Scripts
 
-Turborepo can use a technique known as [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
+| Command | What it does |
+| --- | --- |
+| `pnpm dev` | Run all apps in watch/dev mode |
+| `pnpm build` | Build everything (Turborepo handles the order) |
+| `pnpm test` | Unit and integration tests (Vitest) |
+| `pnpm lint` / `pnpm check-types` | Lint and type-check |
+| `pnpm db:migrate` | Apply pending migrations |
+| `pnpm db:migrate:dev` | Create a new migration after editing `schema.prisma` |
 
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
+CI (GitHub Actions) runs lint, type checks, tests and the build on every pull request. It also checks that the migrations produce exactly `schema.prisma`, so a schema change can't ship without its migration.
 
-```
-cd my-turborepo
-npx turbo login
-```
+## Upgrading an existing deployment
 
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-```
-npx turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.com/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.com/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.com/docs/reference/configuration)
-- [CLI Usage](https://turborepo.com/docs/reference/command-line-reference)
+- Set a new `JWT_SECRET` in the environment. Earlier versions used a hardcoded secret that is in the repo's history, so treat it as leaked. Everyone will need to sign in again.
+- Run `pnpm db:migrate`. If you previously ran `packages/db/migrate.js` by hand, the new migrations still apply cleanly.
+- Existing drawings keep working: the old storage format is still understood when rooms load.
