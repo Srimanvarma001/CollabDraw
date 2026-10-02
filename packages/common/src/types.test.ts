@@ -20,6 +20,33 @@ describe('CreateUserSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('should reject passwords shorter than 8 characters', () => {
+    const result = CreateUserSchema.safeParse({
+      username: 'john',
+      password: 'short',
+      name: 'John'
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('should reject an empty name', () => {
+    const result = CreateUserSchema.safeParse({
+      username: 'john',
+      password: 'password123',
+      name: '   '
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('should accept an email address as username', () => {
+    const result = CreateUserSchema.safeParse({
+      username: 'someone.with.a.long.name@example.com',
+      password: 'password123',
+      name: 'Someone'
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('should reject missing fields', () => {
     const result = CreateUserSchema.safeParse({
       username: 'john'
@@ -53,10 +80,16 @@ describe('CreateRoomSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('should accept empty name (schema allows it)', () => {
+  it('should reject an empty name', () => {
     const result = CreateRoomSchema.safeParse({
       name: ''
     });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+  });
+
+  it('should reject names that are not URL safe', () => {
+    for (const name of ['my room', 'a/b', '../x', 'ünïcode']) {
+      expect(CreateRoomSchema.safeParse({ name }).success).toBe(false);
+    }
   });
 });

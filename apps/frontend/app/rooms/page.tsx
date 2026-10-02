@@ -5,6 +5,7 @@ import { HTTP_BACKEND } from "@/config";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trash2, ArrowLeft, Layout } from "lucide-react";
+import { describeError } from "@/lib/errors";
 
 interface Room {
     id: number;
@@ -62,7 +63,7 @@ export default function RoomsPage() {
                 fetchRooms();
             } else {
                 const data = await res.json();
-                alert(data.message || "Failed to create room");
+                alert(describeError(data) || "Failed to create room");
             }
         } catch {
             alert("Something went wrong");
@@ -180,7 +181,7 @@ export default function RoomsPage() {
                     <div style={{ display: "flex", gap: "12px" }}>
                         <input
                             type="text"
-                            placeholder="Enter room name"
+                            placeholder="Room name (letters, numbers, - and _)"
                             value={newRoomName}
                             onChange={(e) => setNewRoomName(e.target.value)}
                             className="input-dark"

@@ -24,7 +24,8 @@ const db = vi.hoisted(() => {
 });
 vi.mock("@repo/db", () => db);
 
-const { app } = await import("../src/app.js");
+const { createApp } = await import("../src/app.js");
+const app = createApp({ authRateLimit: 1000 });
 const prisma = db.prismaClient;
 
 const tokenFor = (userId: string) => jwt.sign({ userId }, JWT_SECRET);
@@ -39,6 +40,12 @@ describe("POST /signup", () => {
         const res = await request(app).post("/signup").send({ username: "ab" });
         expect(res.status).toBe(400);
         expect(res.body.errors).toHaveProperty("password");
+    });
+
+    it("rejects passwords shorter than 8 characters", async () => {
+        const res = await request(app).post("/signup").send({ username: "ann@example.com", password: "short", name: "Ann" });
+        expect(res.status).toBe(400);
+        expect(res.body.errors.password[0]).toMatch(/at least 8/);
     });
 
     it("returns 201 and the new user id", async () => {
@@ -85,7 +92,20 @@ describe("POST /signin", () => {
         const res = await request(app).post("/signin").send({ username: "ann@example.com", password: "password123" });
         expect(res.status).toBe(200);
         expect(res.body.name).toBe("Ann");
-        expect((jwt.verify(res.body.token, JWT_SECRET) as { userId: string }).userId).toBe("u1");
+        const payload = jwt.verify(res.body.token, JWT_SECRET) as jwt.JwtPayload;
+        expect(payload.userId).toBe("u1");
+        // Tokens expire.
+        expect(payload.exp).toBeGreaterThan(Date.now() / 1000);
+    });
+
+    it("rate limits repeated attempts with 429", async () => {
+        const limited = createApp({ authRateLimit: 3 });
+        prisma.user.findFirst.mockResolvedValue(null);
+        const statuses = [];
+        for (let i = 0; i < 4; i++) {
+            statuses.push((await request(limited).post("/signin").send({ username: "ann@example.com", password: "x" })).status);
+        }
+        expect(statuses).toEqual([401, 401, 401, 429]);
     });
 });
 
@@ -103,6 +123,12 @@ describe("auth middleware", () => {
     it("returns 401 for a token signed with another secret", async () => {
         const forged = jwt.sign({ userId: "u1" }, "some-other-secret");
         const res = await request(app).post("/room").set("Authorization", `Bearer ${forged}`).send({ name: "my-room" });
+        expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for an unsigned (alg: none) token", async () => {
+        const unsigned = jwt.sign({ userId: "u1" }, "", { algorithm: "none" });
+        const res = await request(app).post("/room").set("Authorization", `Bearer ${unsigned}`).send({ name: "my-room" });
         expect(res.status).toBe(401);
     });
 
@@ -124,6 +150,8 @@ describe("rooms", () => {
     it("returns 400 for an invalid room name", async () => {
         const res = await request(app).post("/room").set("Authorization", `Bearer ${tokenFor("u1")}`).send({});
         expect(res.status).toBe(400);
+        const spaces = await request(app).post("/room").set("Authorization", `Bearer ${tokenFor("u1")}`).send({ name: "has spaces" });
+        expect(spaces.status).toBe(400);
     });
 
     it("returns 409 for a duplicate room", async () => {

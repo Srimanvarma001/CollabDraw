@@ -1,7 +1,7 @@
 import { WebSocket, WebSocketServer, ServerOptions } from "ws";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "node:crypto";
-import { JWT_SECRET } from "@repo/backend-common";
+import { JWT_ALGORITHM, JWT_SECRET } from "@repo/backend-common";
 import { prismaClient } from "@repo/db";
 
 /** Close code sent when the token is missing, invalid or expired. */
@@ -33,7 +33,7 @@ interface WSMessage {
 
 function checkUser(token: string): string | null {
     try {
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = jwt.verify(token, JWT_SECRET, { algorithms: [JWT_ALGORITHM] });
         if (typeof decoded === "string" || typeof decoded.userId !== "string") {
             return null;
         }

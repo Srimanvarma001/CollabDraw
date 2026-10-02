@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { JWT_SECRET } from '@repo/backend-common';
+import { JWT_ALGORITHM, JWT_SECRET } from '@repo/backend-common';
 
 function getUserId(req: Request): string | null {
     const authHeader = req.headers["authorization"] ?? "";
@@ -8,7 +8,7 @@ function getUserId(req: Request): string | null {
     if (!token) return null;
 
     try {
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = jwt.verify(token, JWT_SECRET, { algorithms: [JWT_ALGORITHM] });
         if (typeof decoded === "string" || typeof decoded.userId !== "string") {
             return null;
         }

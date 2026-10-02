@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { IconButton } from "./IconButton";
 import { Circle, Pencil, RectangleHorizontalIcon, Undo2, Redo2, Minus, Users, ArrowUpRight, Eraser, ZoomIn, ZoomOut, Type } from "lucide-react";
 import { Game, UserPresence } from "@/draw/Game";
+import { HTTP_BACKEND } from "@/config";
+import { describeError } from "@/lib/errors";
 
 export type Tool = "circle" | "rect" | "pencil" | "line" | "arrow" | "eraser" | "text";
 
@@ -57,9 +59,6 @@ export function Canvas({
         window.addEventListener("resize", updateCanvasSize);
         return () => window.removeEventListener("resize", updateCanvasSize);
     }, [updateCanvasSize]);
-    const HTTP_BACKEND = typeof window !== "undefined" 
-        ? (process.env.NEXT_PUBLIC_HTTP_BACKEND || "http://localhost:3001")
-        : "http://localhost:3001";
 
     async function handleCreateRoom() {
         if (!roomName.trim()) return;
@@ -86,7 +85,7 @@ export function Canvas({
                 setRoomModalMode("created");
             } else {
                 const data = await res.json();
-                alert(data.message || "Failed to create room");
+                alert(describeError(data) || "Failed to create room");
             }
         } catch (e) {
             console.error(e);
@@ -362,7 +361,7 @@ export function Canvas({
                                 </h2>
                                 <input
                                     type="text"
-                                    placeholder="Room name"
+                                    placeholder="Room name (letters, numbers, - and _)"
                                     value={roomName}
                                     onChange={(e) => setRoomName(e.target.value)}
                                     style={{
